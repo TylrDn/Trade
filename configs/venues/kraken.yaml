@@ -1,0 +1,5 @@
+name: KRAKEN
+oms_type: NETTING
+account_type: MARGIN
+starting_balances:
+  - "100000 USD"
