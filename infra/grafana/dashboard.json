@@ -1,0 +1,94 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "currencyUSD" },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto" },
+      "title": "Daily P&L (USD)",
+      "type": "stat",
+      "targets": [
+        { "expr": "trade_daily_pnl_usd", "legendFormat": "Daily P&L", "refId": "A" }
+      ]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "id": 2,
+      "title": "Orders Submitted vs Blocked",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "rate(trade_orders_submitted_total[5m])", "legendFormat": "Submitted", "refId": "A" },
+        { "expr": "rate(trade_orders_blocked_total[5m])", "legendFormat": "Blocked", "refId": "B" }
+      ]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "thresholds" }, "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "id": 3,
+      "title": "Circuit Breaker Trips",
+      "type": "stat",
+      "targets": [
+        { "expr": "trade_circuit_trips_total", "legendFormat": "Trips", "refId": "A" }
+      ]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "currencyUSD" },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 6 },
+      "id": 4,
+      "title": "Portfolio Notional (USD)",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "trade_portfolio_notional_usd", "legendFormat": "Notional", "refId": "A" }
+      ]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 6 },
+      "id": 5,
+      "title": "Order Fill Latency (p50/p95)",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "histogram_quantile(0.5, rate(trade_order_fill_latency_seconds_bucket[5m]))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, rate(trade_order_fill_latency_seconds_bucket[5m]))", "legendFormat": "p95", "refId": "B" }
+      ]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "tags": ["trading", "nautilus"],
+  "time": { "from": "now-3h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Trade System Dashboard",
+  "uid": "trade-main",
+  "version": 1
+}

@@ -1,0 +1,38 @@
+groups:
+  - name: trade_critical
+    rules:
+      - alert: CircuitBreakerTripped
+        expr: increase(trade_circuit_trips_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Trading circuit breaker tripped"
+          description: "A circuit breaker trip was recorded in the last 5 minutes."
+
+      - alert: DailyLossApproachingLimit
+        expr: trade_daily_pnl_usd < -400
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Daily P&L approaching loss limit"
+          description: "Daily P&L is {{ $value }} USD (limit: -500)."
+
+      - alert: FeedStalenessDetected
+        expr: increase(trade_feed_stale_total[2m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Stale market data feed detected"
+          description: "A market data feed has gone stale."
+
+      - alert: OrderBlockRateHigh
+        expr: rate(trade_orders_blocked_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High order block rate"
+          description: "More than 10% of orders are being blocked."
