@@ -1,0 +1,54 @@
+site_name: nautilus-trade
+site_description: Production NautilusTrader trading system
+site_url: https://TylrDn.github.io/Trade/
+repo_url: https://github.com/TylrDn/Trade
+repo_name: TylrDn/Trade
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+    - content.code.annotate
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+  - Architecture: ARCHITECTURE.md
+  - Runbook: RUNBOOK.md
+  - Promotion: PROMOTION.md
+  - ADRs:
+      - "0001 — src layout": adr/0001-src-layout.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: false
+            docstring_style: google

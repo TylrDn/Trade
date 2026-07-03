@@ -1,0 +1,23 @@
+# EMA Cross reference strategy configuration.
+#
+# This file is version-controlled and diff-able. Environment-specific
+# overrides (e.g. instrument or size) can be handled via separate
+# configs/strategies/ema_cross.<env>.yaml files.
+
+name: ema_cross
+strategy_path: nautilus_trade.strategies.ema_cross:EmaCrossStrategy
+
+venue: BINANCE
+instrument_id: BTCUSDT-PERP.BINANCE
+bar_type: BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL
+
+start: "2024-01-01"
+end:   "2025-01-01"
+starting_balance: "100000 USDT"
+
+config:
+  instrument_id: BTCUSDT-PERP.BINANCE
+  bar_type: BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL
+  fast_period: 10
+  slow_period: 30
+  trade_size: "0.01"

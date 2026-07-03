@@ -1,130 +1,155 @@
-# Trade — Production NautilusTrader System
+# nautilus-trade
 
-A fully layered, production-grade algorithmic trading system built on [NautilusTrader](https://nautilustrader.io). Covers research → deterministic backtest → paper/staging → live execution, with full observability, risk controls, and ops tooling.
+[![CI](https://github.com/TylrDn/Trade/actions/workflows/ci.yml/badge.svg)](https://github.com/TylrDn/Trade/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Checked with mypy](https://www.mypy-lang.org/static/mypy_badge.svg)](https://mypy-lang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+A fully layered, production-grade algorithmic trading system built on
+[NautilusTrader](https://nautilustrader.io). Covers research → deterministic
+backtest → paper/staging → live execution, with full observability, risk
+controls, and ops tooling.
 
 ---
 
-## Architecture
+## Layout
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    OPS PLANE (external)                     │
-│  Prometheus · Grafana · Alertmanager · PagerDuty · Logfire  │
-└─────────────────────┬───────────────────────────────────────┘
-                      │ metrics / logs / alerts
-┌─────────────────────▼───────────────────────────────────────┐
-│                SAFETY ENVELOPE                              │
-│  CircuitBreaker · RiskEngine · FeedHealthGuard · KillSwitch │
-└─────────────────────┬───────────────────────────────────────┘
-                      │ validated order intents
-┌─────────────────────▼───────────────────────────────────────┐
-│             NAUTILUSTRADER CORE RUNTIME                     │
-│  MessageBus · Cache · Clock · Portfolio · Accounting        │
-│  Strategies · Actors · ExecutionAlgorithms                  │
-│  OrderManagementSystem · EventStore                         │
-└──────┬──────────────────────────────────┬───────────────────┘
-       │ venue adapters                    │ data adapters
-┌──────▼──────────┐              ┌─────────▼──────────────────┐
-│ EXECUTION GW    │              │ DATA LAYER                  │
-│ Binance/Kraken  │              │ Parquet Catalog · Feeds     │
-│ ExecutionClient │              │ HistoricalLoader · Fallback │
-└──────┬──────────┘              └────────────────────────────┘
-       │
-┌──────▼──────────┐
-│ LIVE VENUE APIS  │
-│ REST + WebSocket │
-└─────────────────┘
-
-RESEARCH PLANE (separate env, no live creds)
-  BacktestNode · DataCatalog · ParameterSweeps · PromotionGates
+Trade/
+├── src/nautilus_trade/       # Package source (installable)
+│   ├── adapters/             # Binance, Kraken adapter factories
+│   ├── actors/               # Regime / signal actors
+│   ├── backtest/             # BacktestNode runner + reports
+│   ├── cli/                  # `trade` Typer CLI
+│   ├── data/                 # Historical loader + live feed monitor
+│   ├── execution/            # ExecutionGateway (single choke point)
+│   ├── live/                 # TradingNode + reconciler
+│   ├── ops/                  # Metrics, alerts, event store, doctor, promotion
+│   ├── risk/                 # Portfolio risk engine
+│   ├── strategies/           # Strategy families
+│   ├── catalog.py            # Parquet catalog access
+│   ├── config.py             # Typed Pydantic settings
+│   ├── config_loader.py      # YAML strategy/venue loaders
+│   └── logging.py            # structlog setup
+├── configs/                  # Version-controlled runtime configs
+│   ├── strategies/           #   per-strategy YAMLs
+│   └── venues/               #   per-venue YAMLs
+├── docs/                     # Architecture, runbook, ADRs
+├── infra/                    # Prometheus, Grafana, Alertmanager
+├── scripts/                  # Legacy wrappers (delegate to `trade` CLI)
+├── tests/
+│   ├── unit/                 # Fast, deterministic
+│   └── integration/          # Cross-module smoke tests
+└── .github/                  # CI, dependabot, CODEOWNERS, templates
 ```
+
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full picture.
+
+---
+
+## Quick start
+
+```bash
+# 1. Clone + install
+git clone https://github.com/TylrDn/Trade.git
+cd Trade
+make install-dev
+
+# 2. Configure
+cp .env.example .env      # fill in venue keys, alert webhooks, risk limits
+
+# 3. Verify
+trade doctor              # env + creds + risk sanity checks
+trade info                # show config
+
+# 4. Backtest
+trade backtest --strategy ema_cross --tag first-run
+
+# 5. Promote and paper trade
+trade promote --strategy ema_cross --from research --to staging
+TRADE_ENV=staging trade live --venue BINANCE --strategy ema_cross
+
+# 6. Emergency stop
+trade flatten --env production
+```
+
+---
+
+## CLI
+
+Single entrypoint. `trade --help` lists all commands.
+
+| Command           | Purpose                                                      |
+| ----------------- | ------------------------------------------------------------ |
+| `trade info`      | Show version, env, catalog path, python version              |
+| `trade doctor`    | Environment diagnostics: config, creds, catalog, risk limits |
+| `trade backtest`  | Run a deterministic backtest via `BacktestNode`              |
+| `trade live`      | Run the live `TradingNode` (respects `TRADE_ENV`)            |
+| `trade flatten`   | Emergency: market-close every open position                  |
+| `trade promote`   | Interactive promotion checklist + manifest                   |
 
 ---
 
 ## Environments
 
-| Environment | Node | Credentials | Purpose |
-|---|---|---|---|
-| `research` | `BacktestNode` | None | Strategy development, parameter sweeps, report generation |
-| `staging` | `TradingNode` (paper) | Sandbox only | Reconciliation tests, recovery tests, operational validation |
-| `production` | `TradingNode` (live) | Vault-managed | Live execution, hard risk gates, emergency flatten |
+| Environment  | Node               | Credentials      | Purpose                                       |
+| ------------ | ------------------ | ---------------- | --------------------------------------------- |
+| `research`   | `BacktestNode`     | None             | Strategy development, sweeps, reports         |
+| `staging`    | `TradingNode`      | Sandbox only     | Reconciliation, recovery, ops validation      |
+| `production` | `TradingNode`      | Vault-managed    | Live execution, hard risk gates               |
 
 ---
 
-## Repository Layout
+## Non-negotiable controls
 
-```
-nautilus_trade/
-  config.py            # Typed configs for all environments
-  catalog.py           # Parquet data catalog management
-  strategies/          # Strategy family modules
-  actors/              # Market regime, signal, filter actors
-  risk/                # Risk engine and circuit breakers
-  execution/           # Execution gateway
-  adapters/            # Venue adapter configs (Binance, Kraken)
-  data/                # Historical loader and live feeds
-  backtest/            # BacktestNode runner and reports
-  live/                # TradingNode runner and reconciler
-  ops/                 # Metrics, alerts, event store
-scripts/               # Operational runbooks as scripts
-tests/                 # Strategy, risk, and reconciler tests
-infra/                 # Prometheus, Grafana, Docker configs
-.github/workflows/     # CI pipeline
-```
+1. **Two-layer risk** — strategy-local + portfolio-global before any live order.
+2. **Reconciliation loop** — orders, fills, balances continuously verified against the venue.
+3. **Feed-health guardrails** — stale data, clock drift, crossed books halt trading.
+4. **Circuit breakers** — max daily loss, max position, max notional, volatility spike.
+5. **Deterministic replay** — every event durably captured, replayable.
+6. **Promotion gates** — no strategy reaches live without a tracked manifest passing research + staging.
 
 ---
 
-## Quick Start
+## Development
 
 ```bash
-# 1. Install dependencies
-pip install -e ".[dev]"
+make install-dev         # editable install with dev extras
+make pre-commit-install  # hooks: ruff, mypy, gitleaks
+make lint                # ruff check
+make format              # ruff format + auto-fix
+make typecheck           # strict mypy
+make test                # pytest
+make test-cov            # pytest + coverage HTML report
+make audit               # pip-audit for CVEs
+```
 
-# 2. Copy env template
-cp .env.example .env
-# Fill in your API keys, secrets, etc.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full workflow and the
+review bar for risk-critical changes.
 
-# 3. Load historical data into catalog
-python scripts/run_backtest.py --instrument BTC-USDT-PERP --start 2024-01-01 --end 2025-01-01
+---
 
-# 4. Run backtest
-python scripts/run_backtest.py --strategy ema_cross --config configs/ema_cross.json
+## Docker
 
-# 5. Promote strategy to staging
-python scripts/promote_strategy.py --strategy ema_cross --env staging
-
-# 6. Run live (after staging validation)
-python scripts/run_live.py --strategy ema_cross --env production
-
-# Emergency: flatten all positions immediately
-python scripts/flatten_all.py --env production
+```bash
+make docker-build        # multi-stage runtime image (non-root, healthcheck)
+make infra-up            # Prometheus + Grafana + Alertmanager
+docker compose up -d     # trade + infra
 ```
 
 ---
 
-## Non-Negotiable Controls
+## Docs
 
-1. **Two-layer risk** — strategy-local + portfolio-global before any live order
-2. **Reconciliation loop** — orders, fills, balances continuously verified against venue
-3. **Feed-health guardrails** — stale data, clock drift, crossed books halt trading
-4. **Circuit breakers** — max daily loss, max position, max notional, volatility spike
-5. **Deterministic replay** — every event durably captured, replayable
-6. **Promotion gates** — no strategy reaches live without tracked manifest passing research + staging
-
----
-
-## Promotion Gates (required before live)
-
-- [ ] Backtest passes with tracked manifest and reproducible output
-- [ ] Strategy survives parameter sensitivity analysis
-- [ ] Paper node reconciliation: orders, fills, balances correct after restart
-- [ ] Feed-failure recovery test passed
-- [ ] All risk limits exercised and confirmed tripping correctly
-- [ ] Emergency flatten script tested in staging
-- [ ] Ops alerts verified firing correctly
+- [Architecture](docs/ARCHITECTURE.md)
+- [Runbook](docs/RUNBOOK.md)
+- [Promotion process](docs/PROMOTION.md)
+- [Security policy](SECURITY.md)
+- [ADRs](docs/adr/)
 
 ---
 
 ## License
 
-MIT
+[MIT](LICENSE)

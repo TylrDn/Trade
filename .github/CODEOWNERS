@@ -1,0 +1,11 @@
+# Default owner for everything
+* @TylrDn
+
+# Risk / execution require extra scrutiny
+/src/nautilus_trade/risk/       @TylrDn
+/src/nautilus_trade/execution/  @TylrDn
+/src/nautilus_trade/live/       @TylrDn
+
+# CI / infra
+/.github/                       @TylrDn
+/infra/                         @TylrDn

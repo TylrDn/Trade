@@ -1,0 +1,7 @@
+# Binance venue defaults. Credentials come from the environment.
+name: BINANCE
+oms_type: NETTING
+account_type: MARGIN
+testnet: true
+starting_balances:
+  - "100000 USDT"
