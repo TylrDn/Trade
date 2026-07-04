@@ -13,8 +13,8 @@ class TestLiveReconciler:
     def test_balance_reconciliation_passes_when_matching(self) -> None:
         rec = LiveReconciler()
         result = rec.check_balances(
-            internal_balances={"USDT": Decimal("10000"), "BTC": Decimal("0.5")},
-            venue_balances={"USDT": Decimal("10000"), "BTC": Decimal("0.5")},
+            internal_balances={"USDT": Decimal("10000")},
+            venue_balances={"USDT": Decimal("10000")},
         )
         assert result.passed
         assert result.mismatches == []
@@ -36,6 +36,7 @@ class TestLiveReconciler:
             internal_balances={"BTC": Decimal("0.50000")},
             venue_balances={"BTC": Decimal("0.50001")},
             tolerance=Decimal("0.001"),
+            currencies=frozenset({"BTC"}),
         )
         assert result.passed
 

@@ -162,10 +162,7 @@ class EmaCrossStrategy(BaseStrategy):
                 self.log.info("[%s] Closing position: ema_cross_down", self.strategy_name())
                 self.close_position(position)
 
-            if exit_notional > 0 or self.gateway is None:
-                self.submit_order_guarded(self.gateway, intent, submit_exit)
-            else:
-                submit_exit()
+            self.submit_exit_guarded(self.gateway, intent, submit_exit)
 
     def on_stop(self) -> None:
         super().on_stop()

@@ -35,8 +35,19 @@ class TestCircuitBreaker:
     def test_reset_clears_state(self) -> None:
         cb = CircuitBreaker()
         cb.trip("test")
-        cb.reset()
+        cb.reset("operator")
         assert not cb.is_tripped
+
+    def test_reset_rejected_in_production_without_operator(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from nautilus_trade.config import system_cfg
+
+        monkeypatch.setattr(system_cfg, "is_live", True)
+        cb = CircuitBreaker()
+        cb.trip("test")
+        with pytest.raises(ValueError, match="explicit human operator"):
+            cb.reset("system")
 
     def test_status_reflects_state(self) -> None:
         cb = CircuitBreaker()
@@ -140,6 +151,37 @@ class TestPortfolioRiskEngine:
         )
         assert not allowed
         assert "portfolio notional" in reason.lower()
+
+    def test_check_blocks_when_pnl_degraded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from nautilus_trade.config import system_cfg
+
+        monkeypatch.setattr(system_cfg, "is_research", False)
+        engine = PortfolioRiskEngine()
+        engine.mark_pnl_tracking_degraded()
+        allowed, reason = engine.check_before_order(
+            side="BUY",
+            notional_usd=500.0,
+            current_portfolio_notional_usd=5000.0,
+            current_leverage=1.0,
+        )
+        assert not allowed
+        assert "degraded" in reason.lower()
+
+    def test_check_blocks_incomplete_portfolio_notional(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from nautilus_trade.config import system_cfg
+
+        monkeypatch.setattr(system_cfg, "is_research", False)
+        engine = PortfolioRiskEngine()
+        allowed, reason = engine.check_before_order(
+            side="BUY",
+            notional_usd=500.0,
+            current_portfolio_notional_usd=None,
+            current_leverage=1.0,
+        )
+        assert not allowed
+        assert "incomplete" in reason.lower()
 
     def test_resume_clears_halt(self) -> None:
         engine = PortfolioRiskEngine()

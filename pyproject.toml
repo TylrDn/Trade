@@ -50,6 +50,10 @@ strict = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "integration: live composition tests requiring nautilus_trader",
+    "staging: fail-closed safety tests requiring TRADE_ENV=staging",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["nautilus_trade"]

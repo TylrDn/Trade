@@ -8,14 +8,23 @@ Metrics are scraped by Prometheus and visualized in Grafana.
 
 from __future__ import annotations
 
-from prometheus_client import Counter, Gauge, Histogram, start_http_server
+import logging
+import threading
+import time
 
-from nautilus_trade.config import ops_cfg
+from prometheus_client import Counter, Gauge, start_http_server
+
+from nautilus_trade.config import ops_cfg, risk_cfg
+
+log = logging.getLogger(__name__)
+_metrics_start_monotonic: float | None = None
 
 # ── Order flow ────────────────────────────────────────────────────────────────
+# trade_orders_submitted_total counts gateway pre-flight approvals, not venue acks.
+# Fill latency (submit → fill) is not wired yet; requires submit timestamp tracking.
 ORDER_SUBMITTED = Counter(
     "trade_orders_submitted_total",
-    "Total orders approved and submitted",
+    "Total orders approved by ExecutionGateway pre-flight",
     ["strategy"],
 )
 
@@ -23,13 +32,6 @@ ORDER_BLOCKED = Counter(
     "trade_orders_blocked_total",
     "Total orders blocked by risk or circuit breaker",
     ["reason", "strategy"],
-)
-
-ORDER_FILL_LATENCY = Histogram(
-    "trade_order_fill_latency_seconds",
-    "Time from order submission to fill confirmation",
-    ["venue"],
-    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0],
 )
 
 # ── Risk ──────────────────────────────────────────────────────────────────────
@@ -40,7 +42,22 @@ DAILY_PNL_USD = Gauge(
 
 PORTFOLIO_NOTIONAL_USD = Gauge(
     "trade_portfolio_notional_usd",
-    "Total open position notional in USD",
+    "Strict complete open position notional in USD; not updated when incomplete",
+)
+
+PORTFOLIO_NOTIONAL_INCOMPLETE = Gauge(
+    "trade_portfolio_notional_incomplete",
+    "1 when strict portfolio notional cannot be computed due to missing MID prices",
+)
+
+MAX_DAILY_LOSS_USD = Gauge(
+    "trade_risk_max_daily_loss_usd",
+    "Configured max daily loss limit in USD (from RISK_MAX_DAILY_LOSS_USD)",
+)
+
+DAILY_LOSS_WARNING_USD = Gauge(
+    "trade_risk_daily_loss_warning_usd",
+    "Daily loss warning threshold in USD (80% of max daily loss limit)",
 )
 
 CIRCUIT_TRIPS = Counter(
@@ -54,20 +71,48 @@ PORTFOLIO_HALTED = Gauge(
     "1 when portfolio risk engine has halted trading, else 0",
 )
 
+PNL_TRACKING_DEGRADED = Counter(
+    "trade_pnl_tracking_degraded_total",
+    "Fill events where realized PnL could not be resolved from position state",
+)
+
 # ── Feed health ───────────────────────────────────────────────────────────────
 FEED_STALE = Counter(
     "trade_feed_stale_total",
-    "Total stale feed detection events",
+    "Total stale feed episodes detected (one increment per episode, not per poll)",
     ["instrument"],
 )
 
 # ── System ────────────────────────────────────────────────────────────────────
 SYSTEM_UPTIME = Gauge(
     "trade_system_uptime_seconds",
-    "System uptime in seconds",
+    "Process uptime in seconds since metrics server start",
 )
+
+
+def refresh_system_uptime() -> None:
+    """Update the system uptime gauge from monotonic clock."""
+    if _metrics_start_monotonic is None:
+        return
+    SYSTEM_UPTIME.set(time.monotonic() - _metrics_start_monotonic)
+
+
+def _uptime_refresh_loop(interval_seconds: float = 60.0) -> None:
+    while True:
+        refresh_system_uptime()
+        time.sleep(interval_seconds)
 
 
 def start_metrics_server() -> None:
     """Start the Prometheus HTTP metrics endpoint."""
+    global _metrics_start_monotonic
+    _metrics_start_monotonic = time.monotonic()
+    refresh_system_uptime()
+    MAX_DAILY_LOSS_USD.set(risk_cfg.max_daily_loss_usd)
+    DAILY_LOSS_WARNING_USD.set(risk_cfg.max_daily_loss_usd * 0.8)
     start_http_server(ops_cfg.prometheus_port)
+    threading.Thread(
+        target=_uptime_refresh_loop,
+        name="metrics-uptime",
+        daemon=True,
+    ).start()

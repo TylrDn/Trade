@@ -14,8 +14,13 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
+from nautilus_trade.config import system_cfg
 from nautilus_trade.ops.metrics import CIRCUIT_TRIPS
+
+if TYPE_CHECKING:
+    from nautilus_trade.ops.event_store import EventStore
 
 log = logging.getLogger(__name__)
 
@@ -43,17 +48,36 @@ class CircuitBreaker:
         else:
             log.warning("Circuit already tripped (new reason: %s)", reason)
 
-    def reset(self) -> None:
+    def reset(
+        self,
+        operator: str = "system",
+        *,
+        event_store: EventStore | None = None,
+    ) -> None:
         """Reset the circuit. Must be called explicitly by an operator."""
+        if system_cfg.is_live and operator == "system":
+            raise ValueError(
+                "Circuit breaker reset in production requires an explicit human operator "
+                "identifier, not 'system'."
+            )
+
+        prior_reason = self._reason
         if self._tripped:
             log.warning(
-                "Circuit breaker RESET (was tripped at %s for: %s)",
+                "Circuit breaker RESET by %s (was tripped at %s for: %s)",
+                operator,
                 self._tripped_at,
-                self._reason,
+                prior_reason,
             )
         self._tripped = False
         self._reason = ""
         self._tripped_at = None
+
+        if event_store is not None:
+            event_store.record(
+                "circuit_breaker_reset",
+                {"operator": operator, "prior_reason": prior_reason},
+            )
 
     def status(self) -> dict:
         return {

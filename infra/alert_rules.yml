@@ -20,13 +20,13 @@ groups:
           description: "Application-level portfolio halt is active."
 
       - alert: DailyLossApproachingLimit
-        expr: trade_daily_pnl_usd < -400
+        expr: trade_daily_pnl_usd < -(0.8 * trade_risk_max_daily_loss_usd)
         for: 1m
         labels:
           severity: warning
         annotations:
           summary: "Daily P&L approaching loss limit"
-          description: "Daily P&L is {{ $value }} USD (warning threshold -400; configure RISK_MAX_DAILY_LOSS_USD)."
+          description: "Daily P&L is {{ $value }} USD (warning at 80% of trade_risk_max_daily_loss_usd / RISK_MAX_DAILY_LOSS_USD)."
 
       - alert: FeedStalenessDetected
         expr: increase(trade_feed_stale_total[2m]) > 0
@@ -35,13 +35,39 @@ groups:
           severity: warning
         annotations:
           summary: "Stale market data feed detected"
-          description: "A market data feed has gone stale."
+          description: "A market data feed has gone stale or failed startup grace."
 
-      - alert: OrderBlockRateHigh
-        expr: rate(trade_orders_blocked_total[5m]) > 0.1
+      - alert: OrderBlockRatioHigh
+        expr: |
+          (
+            sum(rate(trade_orders_blocked_total[5m]))
+            /
+            clamp_min(
+              sum(rate(trade_orders_submitted_total[5m])) + sum(rate(trade_orders_blocked_total[5m])),
+              1e-9
+            )
+          ) > 0.10
         for: 2m
         labels:
           severity: warning
         annotations:
-          summary: "High order block rate"
-          description: "More than 10% of orders are being blocked."
+          summary: "High gateway block ratio"
+          description: "More than 10% of gateway pre-flight decisions are blocks."
+
+      - alert: PortfolioNotionalIncomplete
+        expr: trade_portfolio_notional_incomplete == 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Portfolio notional incomplete"
+          description: "Strict portfolio notional cannot be computed due to missing MID prices."
+
+      - alert: PnlTrackingDegraded
+        expr: increase(trade_pnl_tracking_degraded_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Fill PnL tracking degraded"
+          description: "At least one fill could not resolve realized PnL from position state."

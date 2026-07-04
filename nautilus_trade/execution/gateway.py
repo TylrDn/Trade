@@ -55,7 +55,7 @@ class ExecutionGateway:
     def submit(
         self,
         intent: OrderIntent,
-        current_portfolio_notional_usd: float = 0.0,
+        current_portfolio_notional_usd: float | None = None,
         current_leverage: float = 1.0,
         open_order_count: int = 0,
     ) -> bool:

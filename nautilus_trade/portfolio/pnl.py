@@ -51,11 +51,12 @@ def realized_pnl_delta_usd(
     cache: Any,
     event: Any,
     last_seen: dict[str, Decimal],
-) -> tuple[float, str]:
+) -> tuple[float | None, str]:
     """Return (delta_usd, source) for a fill event.
 
     source is ``position_delta`` when computed from position.realized_pnl change,
-    or ``unavailable`` when position state cannot be read.
+    or ``unavailable`` when position state cannot be read. When unavailable, delta
+    is None — not zero — so live/staging callers can fail closed.
     """
     position = resolve_position_for_fill(cache, event)
     if position is None:
@@ -63,7 +64,7 @@ def realized_pnl_delta_usd(
             "realized_pnl_delta: no position for fill instrument=%s",
             getattr(event, "instrument_id", "?"),
         )
-        return 0.0, "unavailable"
+        return None, "unavailable"
 
     realized = getattr(position, "realized_pnl", None)
     if realized is None:
@@ -71,7 +72,7 @@ def realized_pnl_delta_usd(
             "realized_pnl_delta: position %s has no realized_pnl",
             _position_key(position),
         )
-        return 0.0, "unavailable"
+        return None, "unavailable"
 
     current = Decimal(str(_money_to_float(realized)))
     key = _position_key(position)

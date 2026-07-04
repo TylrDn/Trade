@@ -1,6 +1,6 @@
-# Trade — Production NautilusTrader System
+# Trade — Staging-Grade NautilusTrader System
 
-A fully layered, production-grade algorithmic trading system built on [NautilusTrader](https://nautilustrader.io). Covers research → deterministic backtest → paper/staging → live execution, with observability, risk controls, and ops tooling.
+A layered algorithmic trading system built on [NautilusTrader](https://nautilustrader.io). Covers research → deterministic backtest → paper/staging → live execution, with observability, risk controls, and ops tooling. The live path is composed and safety-tested, but **not all controls are OMS-enforced** — see Safety boundaries.
 
 ---
 
@@ -102,7 +102,7 @@ python3 scripts/flatten_all.py --env production
 
 1. **Two-layer risk** — strategy-local limits plus portfolio-global pre-flight via `ExecutionGateway` (advisory at application layer; see Safety boundaries)
 2. **Reconciliation loop** — startup and periodic balance/position checks against Binance REST (Binance-only today)
-3. **Feed-health guardrails** — stale bar data trips the shared circuit breaker
+3. **Feed-health guardrails** — stale bar data or startup timeout (no first bar within grace) trips the shared circuit breaker
 4. **Circuit breakers** — daily loss, per-position notional, portfolio notional, leverage, open orders, reconciliation mismatch, stale feed, missing venue credentials
 5. **Audit trail** — safety events written to `./logs/events/events_<run_id>.jsonl`
 6. **Promotion gates** — interactive checklist via `scripts/promote_strategy.py` (manual attestation, not automated verification)
@@ -113,11 +113,20 @@ python3 scripts/flatten_all.py --env production
 
 | Control | Enforcement level | Notes |
 |---|---|---|
-| `ExecutionGateway` | Advisory pre-flight | Strategies must call `BaseStrategy.submit_order_guarded()`. Direct `submit_order()`, emergency flatten, and optional `flatten_on_stop` bypass the gateway. OMS-level blocking is future work. |
-| Daily P&L / halt | Application layer | Derived from Nautilus `position.realized_pnl` deltas (USDT-settled scope). Unavailable position state records zero delta and logs a warning. |
-| Reconciliation | Fail-closed in staging/production | Missing credentials or fetch errors trip the breaker. Balance/position compare only when venue snapshot status is `ok`. |
+| `ExecutionGateway` | Advisory pre-flight | Strategies must call `submit_order_guarded()` / `submit_exit_guarded()`. Exits fail closed when MID price is missing and the gateway is wired. Emergency flatten and optional `flatten_on_stop` bypass the gateway. OMS-level blocking is future work. **EmaCross** guarded paths are protected by `tests/test_strategy_gateway_contract.py`. |
+| Daily P&L / halt | Application layer | Derived from Nautilus `position.realized_pnl` deltas (USDT-settled scope). Unresolved PnL in staging/production halts trading and trips the breaker — it is **not** recorded as zero loss. |
+| Feed health | Fail-closed in staging/production | Stale bars trip the breaker. If no first bar arrives within `RISK_FEED_STARTUP_GRACE_SECONDS`, startup timeout trips the breaker. Research allows startup without first bar. |
+| Portfolio notional | Fail-closed in staging/production | Gateway blocks new orders when any open position lacks a MID price. `trade_portfolio_notional_incomplete=1` when strict notional is unknown; notional gauge is not updated with partial sums. |
+| Reconciliation | Fail-closed in staging/production | Missing credentials or fetch errors trip the breaker. USDT balance compare; cache-validated position mapping with distinct mapping vs mismatch events. |
+| Circuit breaker reset | Operator-guarded in production | `reset()` and `resume()` require an explicit operator ID in `TRADE_ENV=production`. |
 | Emergency flatten | Intentional bypass | Market orders; waits for flat or timeout; documented slippage risk. |
 | Normal shutdown | Positions preserved by default | `EmaCrossConfig.flatten_on_stop` defaults to `false`. |
+| Metrics | Honest semantics | `trade_orders_submitted_total` counts gateway approvals, not venue acks. Fill latency is not wired yet. Alert thresholds use exported gauges (`trade_risk_max_daily_loss_usd`) set at metrics server start from `RISK_*` config. |
+
+**EmaCross intentional gateway bypasses** (documented, not guarded):
+
+- `gateway=None` at construction — backtest/research path; `on_start` logs that portfolio-level risk checks are bypassed
+- `EmaCrossConfig.flatten_on_stop=True` — `on_stop` calls `close_all_positions()` for emergency flatten semantics (same bypass class as `scripts/flatten_all.py`)
 
 ---
 
@@ -125,9 +134,13 @@ python3 scripts/flatten_all.py --env production
 
 ```bash
 python3 -m pytest tests/ -v
+make test-integration   # LiveRuntime / TradingNode composition smoke tests
+make test-staging       # Fail-closed safety tests under TRADE_ENV=staging
 ```
 
-In minimal environments without `nautilus_trader` / `prometheus_client`, heavy-dependency tests skip cleanly via `pytest.importorskip`. CI installs full dependencies and runs the complete suite.
+Manual testnet validation (not CI): see [docs/testnet_smoke.md](docs/testnet_smoke.md). Store evidence in [`runs/testnet_smoke/`](runs/testnet_smoke/) (template + BLOCKED placeholder committed; dated evidence files added after manual runs).
+
+In minimal environments without `nautilus_trader` / `prometheus_client`, heavy-dependency tests skip cleanly via `pytest.importorskip`. CI installs full dependencies and runs the complete suite including `@pytest.mark.integration` tests.
 
 ---
 
@@ -136,6 +149,8 @@ In minimal environments without `nautilus_trader` / `prometheus_client`, heavy-d
 - KillSwitch module (README previously listed it; use circuit breaker + flatten for now)
 - Historical data loader under `nautilus_trade/data/`
 - Logfire integration (`LOGFIRE_TOKEN` in `.env.example` is reserved)
+- Order fill latency metric (requires submit-timestamp tracking)
+- True testnet live smoke in CI (manual ops validation only today)
 
 ---
 

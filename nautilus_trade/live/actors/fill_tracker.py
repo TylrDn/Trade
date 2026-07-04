@@ -12,9 +12,13 @@ from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.trading.actor import Actor
 
-from nautilus_trade.ops.metrics import DAILY_PNL_USD, PORTFOLIO_NOTIONAL_USD
+from nautilus_trade.config import system_cfg
+from nautilus_trade.ops.metrics import (
+    DAILY_PNL_USD,
+    PNL_TRACKING_DEGRADED,
+)
 from nautilus_trade.portfolio.pnl import realized_pnl_delta_usd
-from nautilus_trade.portfolio.stats import portfolio_notional_usd
+from nautilus_trade.portfolio.stats import refresh_portfolio_notional_metrics
 
 if TYPE_CHECKING:
     from nautilus_trade.live.runtime import LiveRuntime
@@ -48,29 +52,48 @@ class FillTrackerActor(Actor):
             event,
             self._last_realized_pnl,
         )
+
+        fill_payload = {
+            "instrument_id": str(event.instrument_id),
+            "order_id": str(event.client_order_id),
+            "side": event.order_side.name,
+            "last_qty": str(event.last_qty),
+            "last_px": str(event.last_px),
+            "realized_pnl_usd": realized_pnl,
+            "pnl_source": pnl_source,
+        }
+
         if pnl_source == "unavailable":
-            log.warning(
-                "Fill PnL unavailable for %s; recording zero delta for daily halt",
+            log.critical(
+                "Fill PnL unavailable for %s; fail-closed in staging/production",
                 event.instrument_id,
             )
+            PNL_TRACKING_DEGRADED.inc()
+            self._runtime.event_store.record(
+                "fill_pnl_unavailable",
+                {
+                    **fill_payload,
+                    "realized_pnl_usd": None,
+                },
+            )
+            if not system_cfg.is_research:
+                self._runtime.risk_engine.mark_pnl_tracking_degraded()
+                self._runtime.risk_engine.halt("fill PnL unavailable")
+                self._runtime.record_breaker_trip("fill_pnl_unavailable")
+
+            daily_pnl = float(self._runtime.risk_engine.daily.realized_pnl_usd)
+            fill_payload["daily_pnl_usd"] = daily_pnl
+            self._runtime.event_store.record("fill", fill_payload)
+            DAILY_PNL_USD.set(daily_pnl)
+            refresh_portfolio_notional_metrics(self.cache, self.portfolio)
+            return
 
         self._runtime.risk_engine.record_fill(realized_pnl)
         daily_pnl = float(self._runtime.risk_engine.daily.realized_pnl_usd)
         DAILY_PNL_USD.set(daily_pnl)
-        PORTFOLIO_NOTIONAL_USD.set(portfolio_notional_usd(self.cache, self.portfolio))
-        self._runtime.event_store.record(
-            "fill",
-            {
-                "instrument_id": str(event.instrument_id),
-                "order_id": str(event.client_order_id),
-                "side": event.order_side.name,
-                "last_qty": str(event.last_qty),
-                "last_px": str(event.last_px),
-                "realized_pnl_usd": realized_pnl,
-                "pnl_source": pnl_source,
-                "daily_pnl_usd": daily_pnl,
-            },
-        )
+        refresh_portfolio_notional_metrics(self.cache, self.portfolio)
+        fill_payload["daily_pnl_usd"] = daily_pnl
+        self._runtime.event_store.record("fill", fill_payload)
         if self._runtime.risk_engine.is_halted:
             log.critical(
                 "Portfolio risk halted after fill: daily_pnl=%.2f source=%s",

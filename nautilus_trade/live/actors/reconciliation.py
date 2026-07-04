@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.trading.actor import Actor
 
+from nautilus_trade.adapters.binance_instruments import (
+    map_binance_positions,
+    mapping_warnings_for_positions,
+)
 from nautilus_trade.adapters.binance_snapshot import VenueSnapshot, VenueSnapshotProvider
 from nautilus_trade.config import system_cfg
 from nautilus_trade.live.portfolio_snapshot import (
@@ -44,8 +49,11 @@ class ReconciliationActor(Actor):
         self.cfg = config
         self._runtime = runtime
         self._venue_provider = venue_provider
+        self._started_at_ns: int | None = None
+        self._startup_timing_recorded = False
 
     def on_start(self) -> None:
+        self._started_at_ns = self.clock.timestamp_ns()
         self.clock.set_timer(
             name=_STARTUP_TIMER,
             interval=self.cfg.startup_delay_seconds,
@@ -70,11 +78,48 @@ class ReconciliationActor(Actor):
     def _on_periodic_timer(self, _event: object) -> None:
         self._run_reconciliation("periodic")
 
+    def _resolve_venue_positions(self, snapshot: VenueSnapshot) -> dict[str, Decimal]:
+        if snapshot.raw_positions:
+            return map_binance_positions(snapshot.raw_positions, self.cache)
+        return snapshot.positions
+
     def _run_reconciliation(self, phase: str) -> None:
+        if phase == "startup" and not self._startup_timing_recorded:
+            started_at_ns = self._started_at_ns
+            if started_at_ns is None:
+                started_at_ns = self.clock.timestamp_ns()
+            elapsed_seconds = (self.clock.timestamp_ns() - started_at_ns) / 1e9
+            log.info(
+                "Reconciliation startup timing: elapsed=%.2fs configured_delay=%ss",
+                elapsed_seconds,
+                self.cfg.startup_delay_seconds,
+            )
+            self._runtime.event_store.record(
+                "reconciliation_startup_timing",
+                {
+                    "phase": phase,
+                    "elapsed_seconds": elapsed_seconds,
+                    "configured_delay_seconds": self.cfg.startup_delay_seconds,
+                },
+            )
+            self._startup_timing_recorded = True
+
         snapshot = self._venue_provider.fetch()
         if snapshot.status != "ok":
             self._handle_snapshot_failure(phase, snapshot)
             return
+
+        venue_positions = self._resolve_venue_positions(snapshot)
+        mapping_warnings = mapping_warnings_for_positions(venue_positions, self.cache)
+        if mapping_warnings:
+            self._runtime.event_store.record(
+                "reconciliation_mapping_warning",
+                {"phase": phase, "warnings": mapping_warnings},
+            )
+            log.warning("Reconciliation mapping warnings (%s): %s", phase, mapping_warnings)
+            if not system_cfg.is_research and venue_positions:
+                self._runtime.record_breaker_trip("reconciliation_mapping_mismatch")
+                return
 
         internal_balances = extract_internal_balances(self.portfolio)
         internal_positions = extract_internal_positions(self.cache)
@@ -85,18 +130,18 @@ class ReconciliationActor(Actor):
         )
         position_result = self._runtime.reconciler.check_positions(
             internal_positions,
-            snapshot.positions,
+            venue_positions,
         )
 
         if not balance_result.passed or not position_result.passed:
-            self._runtime.event_store.record(
-                "reconciliation_failed",
-                {
-                    "phase": phase,
-                    "balance_mismatches": balance_result.mismatches,
-                    "position_mismatches": position_result.mismatches,
-                },
-            )
+            payload = {
+                "phase": phase,
+                "balance_mismatches": balance_result.mismatches,
+                "position_mismatches": position_result.mismatches,
+            }
+            if balance_result.mismatches and "USDT" in snapshot.balance_details:
+                payload["usdt_balance_details"] = snapshot.balance_details["USDT"]
+            self._runtime.event_store.record("reconciliation_failed", payload)
 
         log.info(
             "Reconciliation %s complete: balances=%s positions=%s",

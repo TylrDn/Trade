@@ -48,5 +48,5 @@ class TestRealizedPnlDelta:
 
         delta, source = realized_pnl_delta_usd(cache, event, last_seen)
 
-        assert delta == 0.0
+        assert delta is None
         assert source == "unavailable"

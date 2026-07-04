@@ -33,6 +33,26 @@ def map_binance_positions(
     return mapped
 
 
+def mapping_warnings_for_positions(
+    mapped_positions: dict[str, Any],
+    cache: Any | None,
+) -> list[str]:
+    """Return warnings when mapped instrument IDs are not loaded in cache."""
+    if cache is None or not mapped_positions:
+        return []
+
+    instruments_fn = getattr(cache, "instruments", None)
+    if not callable(instruments_fn):
+        return []
+
+    known = {str(getattr(instrument, "id", "")) for instrument in instruments_fn()}
+    warnings: list[str] = []
+    for instrument_id in mapped_positions:
+        if instrument_id not in known:
+            warnings.append(f"{instrument_id} not loaded in cache")
+    return warnings
+
+
 def _resolve_instrument_id(symbol: str, cache: Any | None) -> str:
     if cache is not None:
         instruments_fn = getattr(cache, "instruments", None)

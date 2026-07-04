@@ -92,3 +92,16 @@ class TestLiveRuntime:
             assert "circuit_breaker_tripped" in contents
         finally:
             runtime.close()
+
+    def test_reset_breaker_persists_event(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr("nautilus_trade.ops.event_store.EVENT_LOG_DIR", tmp_path)
+        runtime = create_live_runtime("reset-run")
+        try:
+            runtime.record_breaker_trip("test_trip")
+            runtime.reset_breaker("operator")
+            assert not runtime.breaker.is_tripped
+            contents = (tmp_path / "events_reset-run.jsonl").read_text()
+            assert "circuit_breaker_reset" in contents
+            assert "operator" in contents
+        finally:
+            runtime.close()

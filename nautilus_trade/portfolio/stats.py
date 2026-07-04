@@ -35,6 +35,23 @@ def portfolio_notional_usd(cache: Any, portfolio: Any) -> float:
     return float(total)
 
 
+def portfolio_notional_usd_strict(cache: Any, portfolio: Any) -> float | None:
+    """Sum open position notional, or None if any open position lacks MID price."""
+    total = Decimal(0)
+    for position in cache.positions_open():
+        if not position.is_open:
+            continue
+        price = cache.price(position.instrument_id, PriceType.MID)
+        if price is None:
+            log.error(
+                "portfolio_notional_strict: no MID price for %s; notional unknown",
+                position.instrument_id,
+            )
+            return None
+        total += Decimal(str(abs(position.quantity))) * Decimal(str(price))
+    return float(total)
+
+
 def portfolio_equity_usd(portfolio: Any) -> float:
     """Return total account equity in USD when available."""
     equity = Decimal(0)
@@ -64,3 +81,20 @@ def portfolio_leverage(cache: Any, portfolio: Any) -> float:
 def total_open_order_count(cache: Any) -> int:
     """Count all open orders across instruments."""
     return len(cache.orders_open())
+
+
+def refresh_portfolio_notional_metrics(cache: Any, portfolio: Any) -> None:
+    """Update strict notional gauges for observability.
+
+    When strict notional is unknown, marks incomplete=1 and leaves the notional
+    gauge unchanged to avoid understating exposure.
+    """
+    from nautilus_trade.ops.metrics import PORTFOLIO_NOTIONAL_INCOMPLETE, PORTFOLIO_NOTIONAL_USD
+
+    notional = portfolio_notional_usd_strict(cache, portfolio)
+    if notional is None:
+        PORTFOLIO_NOTIONAL_INCOMPLETE.set(1)
+        return
+
+    PORTFOLIO_NOTIONAL_INCOMPLETE.set(0)
+    PORTFOLIO_NOTIONAL_USD.set(notional)

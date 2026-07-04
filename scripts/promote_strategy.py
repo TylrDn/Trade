@@ -3,6 +3,9 @@
 Runs pre-promotion checklist and records the promotion manifest.
 Do not promote a strategy to a higher environment without passing all gates.
 
+For staging→production, operators should reference the latest manual testnet
+smoke evidence in ``runs/testnet_smoke/`` (see docs/testnet_smoke.md).
+
 Usage:
     python scripts/promote_strategy.py --strategy ema_cross --from research --to staging
     python scripts/promote_strategy.py --strategy ema_cross --from staging --to production

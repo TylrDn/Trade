@@ -44,6 +44,10 @@ class LiveRuntime:
             {"reason": reason},
         )
 
+    def reset_breaker(self, operator: str) -> None:
+        """Reset the circuit breaker with operator audit trail."""
+        self.breaker.reset(operator, event_store=self.event_store)
+
     def close(self) -> None:
         """Release runtime resources."""
         self.event_store.close()
@@ -58,7 +62,11 @@ def create_live_runtime(run_id: str) -> LiveRuntime:
         breaker.trip(reason)
         event_store.record("circuit_breaker_tripped", {"reason": reason})
 
-    risk_engine = PortfolioRiskEngine(breaker=breaker, trip_fn=record_breaker_trip)
+    risk_engine = PortfolioRiskEngine(
+        breaker=breaker,
+        trip_fn=record_breaker_trip,
+        event_store=event_store,
+    )
     gateway = ExecutionGateway(risk_engine=risk_engine, breaker=breaker)
     reconciler = LiveReconciler(breaker=breaker, trip_fn=record_breaker_trip)
     log.info("LiveRuntime created: run_id=%s", run_id)

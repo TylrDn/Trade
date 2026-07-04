@@ -67,6 +67,31 @@ jobs:
           TRADE_ENV: research
           CATALOG_PATH: /tmp/test_catalog
 
+  staging-safety-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run staging fail-closed safety tests
+        run: |
+          pytest tests/test_risk.py tests/test_fill_tracker_actor.py \
+            tests/test_reconciliation_actor.py tests/test_feed_health.py \
+            tests/test_exit_guarded.py tests/test_staging_env.py -v
+        env:
+          TRADE_ENV: staging
+          CATALOG_PATH: /tmp/test_catalog
+
   security-scan:
     runs-on: ubuntu-latest
     steps:

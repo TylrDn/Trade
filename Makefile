@@ -1,4 +1,4 @@
-.PHONY: install lint test backtest live flatten infra-up infra-down
+.PHONY: install lint test test-integration test-staging backtest live flatten infra-up infra-down
 
 install:
 	pip install -e ".[dev]"
@@ -9,6 +9,12 @@ lint:
 
 test:
 	python3 -m pytest tests/ -v --cov=nautilus_trade --cov-report=term-missing
+
+test-integration:
+	python3 -m pytest tests/ -v -m integration
+
+test-staging:
+	TRADE_ENV=staging python3 -m pytest tests/test_risk.py tests/test_fill_tracker_actor.py tests/test_reconciliation_actor.py tests/test_feed_health.py tests/test_exit_guarded.py tests/test_staging_env.py -v
 
 backtest:
 	python3 scripts/run_backtest.py

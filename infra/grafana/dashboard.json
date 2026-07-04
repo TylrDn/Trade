@@ -31,10 +31,10 @@
       },
       "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
       "id": 2,
-      "title": "Orders Submitted vs Blocked",
+      "title": "Orders Gateway Approved vs Blocked",
       "type": "timeseries",
       "targets": [
-        { "expr": "rate(trade_orders_submitted_total[5m])", "legendFormat": "Submitted", "refId": "A" },
+        { "expr": "rate(trade_orders_submitted_total[5m])", "legendFormat": "Gateway approved", "refId": "A" },
         { "expr": "rate(trade_orders_blocked_total[5m])", "legendFormat": "Blocked", "refId": "B" }
       ]
     },
@@ -60,25 +60,26 @@
       },
       "gridPos": { "h": 6, "w": 12, "x": 0, "y": 6 },
       "id": 4,
-      "title": "Portfolio Notional (USD)",
+      "title": "Portfolio Notional (strict)",
       "type": "timeseries",
       "targets": [
-        { "expr": "trade_portfolio_notional_usd", "legendFormat": "Notional", "refId": "A" }
+        { "expr": "trade_portfolio_notional_usd", "legendFormat": "Notional", "refId": "A" },
+        { "expr": "trade_portfolio_notional_incomplete", "legendFormat": "Incomplete", "refId": "B" }
       ]
     },
     {
       "datasource": "Prometheus",
       "fieldConfig": {
-        "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" },
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" },
         "overrides": []
       },
       "gridPos": { "h": 6, "w": 12, "x": 12, "y": 6 },
       "id": 5,
-      "title": "Order Fill Latency (p50/p95)",
+      "title": "PnL Tracking Degraded / Portfolio Halted",
       "type": "timeseries",
       "targets": [
-        { "expr": "histogram_quantile(0.5, rate(trade_order_fill_latency_seconds_bucket[5m]))", "legendFormat": "p50", "refId": "A" },
-        { "expr": "histogram_quantile(0.95, rate(trade_order_fill_latency_seconds_bucket[5m]))", "legendFormat": "p95", "refId": "B" }
+        { "expr": "increase(trade_pnl_tracking_degraded_total[5m])", "legendFormat": "PnL degraded events", "refId": "A" },
+        { "expr": "trade_portfolio_halted", "legendFormat": "Portfolio halted", "refId": "B" }
       ]
     }
   ],

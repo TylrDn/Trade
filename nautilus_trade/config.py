@@ -29,6 +29,10 @@ class RiskConfig(BaseSettings):
     max_leverage: float = Field(default=3.0, description="Max portfolio leverage")
     max_open_orders: int = Field(default=20, description="Max concurrent open orders")
     stale_feed_seconds: int = Field(default=30, description="Seconds before feed considered stale")
+    feed_startup_grace_seconds: int = Field(
+        default=60,
+        description="Seconds to wait for first bar before fail-closed startup trip",
+    )
 
 
 class AdapterConfig(BaseSettings):

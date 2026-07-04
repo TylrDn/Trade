@@ -26,7 +26,10 @@ catalog/
 
 # Logs / runs
 logs/
-runs/
+runs/*
+!runs/testnet_smoke/
+!runs/testnet_smoke/**
+runs/promotions/
 *.log
 
 # IDE

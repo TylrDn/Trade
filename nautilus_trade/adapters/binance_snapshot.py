@@ -6,7 +6,7 @@ import hashlib
 import hmac
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Literal, Protocol
 from urllib.parse import urlencode
@@ -29,6 +29,8 @@ class VenueSnapshot:
     positions: dict[str, Decimal]
     status: SnapshotStatus
     error: str | None = None
+    raw_positions: dict[str, Decimal] = field(default_factory=dict)
+    balance_details: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
 class VenueSnapshotProvider(Protocol):
@@ -95,16 +97,31 @@ class BinanceVenueSnapshotProvider:
             )
 
         balances: dict[str, Decimal] = {}
+        balance_details: dict[str, dict[str, str]] = {}
         for asset in data.get("assets", []):
+            asset_name = str(asset.get("asset", ""))
             wallet = asset.get("walletBalance", "0")
-            balances[str(asset.get("asset", ""))] = Decimal(str(wallet))
+            balances[asset_name] = Decimal(str(wallet))
+            balance_details[asset_name] = {
+                "walletBalance": str(asset.get("walletBalance", "0")),
+                "availableBalance": str(asset.get("availableBalance", "0")),
+                "crossWalletBalance": str(asset.get("crossWalletBalance", "0")),
+            }
 
+        raw_positions: dict[str, Decimal] = {}
         positions: dict[str, Decimal] = {}
         for pos in data.get("positions", []):
             amt = Decimal(str(pos.get("positionAmt", "0")))
             if amt == 0:
                 continue
             symbol = str(pos.get("symbol", ""))
+            raw_positions[symbol] = amt
             positions[binance_symbol_to_instrument_id(symbol)] = amt
 
-        return VenueSnapshot(balances=balances, positions=positions, status="ok")
+        return VenueSnapshot(
+            balances=balances,
+            positions=positions,
+            status="ok",
+            raw_positions=raw_positions,
+            balance_details=balance_details,
+        )

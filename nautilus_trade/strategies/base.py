@@ -15,7 +15,7 @@ from nautilus_trader.trading.strategy import Strategy
 from nautilus_trade.execution.gateway import ExecutionGateway, OrderIntent
 from nautilus_trade.portfolio.stats import (
     portfolio_leverage,
-    portfolio_notional_usd,
+    portfolio_notional_usd_strict,
     total_open_order_count,
 )
 
@@ -82,12 +82,17 @@ class BaseStrategy(Strategy):
     def gateway_order_context(
         self,
         gateway: ExecutionGateway | None,
-    ) -> tuple[float, float, int]:
+    ) -> tuple[float | None, float, int]:
         """Return portfolio notional, leverage, and open order count for gateway checks."""
         if gateway is None:
             return 0.0, 1.0, 0
+        notional = portfolio_notional_usd_strict(self.cache, self.portfolio)
+        if notional is None:
+            return None, portfolio_leverage(self.cache, self.portfolio), total_open_order_count(
+                self.cache
+            )
         return (
-            portfolio_notional_usd(self.cache, self.portfolio),
+            notional,
             portfolio_leverage(self.cache, self.portfolio),
             total_open_order_count(self.cache),
         )
@@ -123,3 +128,28 @@ class BaseStrategy(Strategy):
 
         submit_fn()
         return True
+
+    def submit_exit_guarded(
+        self,
+        gateway: ExecutionGateway | None,
+        intent: OrderIntent,
+        submit_fn: Callable[[], None],
+    ) -> bool:
+        """Run gateway pre-flight for exit orders.
+
+        When the gateway is wired and exit notional is unknown (MID price missing),
+        block the exit rather than bypassing safety checks. Backtest paths without
+        a gateway proceed without checks.
+        """
+        if gateway is None:
+            submit_fn()
+            return True
+
+        if intent.notional_usd <= 0:
+            log.critical(
+                "[%s] Exit blocked: MID price unavailable with gateway wired (fail-closed)",
+                self.strategy_name(),
+            )
+            return False
+
+        return self.submit_order_guarded(gateway, intent, submit_fn)

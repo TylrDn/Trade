@@ -68,13 +68,18 @@ class LiveReconciler:
         internal_balances: dict[str, Decimal],
         venue_balances: dict[str, Decimal],
         tolerance: Decimal = Decimal("0.001"),
+        currencies: frozenset[str] | None = frozenset({"USDT"}),
     ) -> ReconciliationResult:
         """Compare internal vs venue balances within tolerance.
 
+        Defaults to USDT-only scope to reduce false positives from unused assets.
         On mismatch, sends an alert and trips the circuit breaker (if wired).
         """
         mismatches: list[str] = []
-        all_currencies = set(internal_balances) | set(venue_balances)
+        if currencies is None:
+            all_currencies = set(internal_balances) | set(venue_balances)
+        else:
+            all_currencies = currencies
         for ccy in all_currencies:
             internal = internal_balances.get(ccy, Decimal(0))
             venue = venue_balances.get(ccy, Decimal(0))
