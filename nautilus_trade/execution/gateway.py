@@ -53,6 +53,7 @@ class ExecutionGateway:
         intent: OrderIntent,
         current_portfolio_notional_usd: float = 0.0,
         current_leverage: float = 1.0,
+        open_order_count: int = 0,
     ) -> bool:
         """Validate and approve the intent. Returns True if allowed.
 
@@ -70,6 +71,7 @@ class ExecutionGateway:
             notional_usd=intent.notional_usd,
             current_portfolio_notional_usd=current_portfolio_notional_usd,
             current_leverage=current_leverage,
+            open_order_count=open_order_count,
         )
 
         if not allowed:

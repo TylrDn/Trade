@@ -20,7 +20,9 @@ from nautilus_trader.model.enums import OrderSide, TimeInForce
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Quantity
 
+from nautilus_trade.actors.regime_filter import RegimeSignal
 from nautilus_trade.config import risk_cfg
+from nautilus_trade.execution.gateway import ExecutionGateway, OrderIntent
 from nautilus_trade.strategies.base import BaseStrategy
 
 
@@ -30,25 +32,47 @@ class EmaCrossConfig(StrategyConfig, frozen=True):
     fast_period: int = 10
     slow_period: int = 30
     trade_size: str = "0.01"  # base quantity as string for precision
-    max_position_notional_usd: float = risk_cfg.max_position_notional_usd
+    max_position_notional_usd: float | None = None
+    use_regime_filter: bool = True
 
 
 class EmaCrossStrategy(BaseStrategy):
     """EMA Cross — long only, strategy-local risk gated."""
 
-    def __init__(self, config: EmaCrossConfig) -> None:
+    def __init__(
+        self,
+        config: EmaCrossConfig,
+        gateway: ExecutionGateway | None = None,
+    ) -> None:
         super().__init__(config)
         self.cfg = config
+        self.gateway = gateway
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
         self.bar_type = BarType.from_str(config.bar_type)
         self.fast_ema = ExponentialMovingAverage(config.fast_period)
         self.slow_ema = ExponentialMovingAverage(config.slow_period)
+        self._regime: RegimeSignal | None = None
+        self._max_notional = (
+            config.max_position_notional_usd
+            if config.max_position_notional_usd is not None
+            else risk_cfg.max_position_notional_usd
+        )
 
     def strategy_name(self) -> str:
         return f"EmaCross({self.cfg.fast_period}/{self.cfg.slow_period})"
 
     def on_start(self) -> None:
         super().on_start()
+        self.log.info(
+            "[%s] Resolved max position notional limit: %.2f USD",
+            self.strategy_name(),
+            self._max_notional,
+        )
+        if self.gateway is None:
+            self.log.warning(
+                "[%s] ExecutionGateway not wired — orders bypass portfolio-level risk checks",
+                self.strategy_name(),
+            )
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
             self.log.error("Instrument not found: %s", self.instrument_id)
@@ -57,6 +81,12 @@ class EmaCrossStrategy(BaseStrategy):
         self.register_indicator_for_bars(self.bar_type, self.fast_ema)
         self.register_indicator_for_bars(self.bar_type, self.slow_ema)
         self.subscribe_bars(self.bar_type)
+        if self.cfg.use_regime_filter:
+            self.subscribe_data(RegimeSignal)
+
+    def on_data(self, data: object) -> None:
+        if isinstance(data, RegimeSignal) and data.instrument_id == str(self.instrument_id):
+            self._regime = data
 
     def on_bar(self, bar: Bar) -> None:
         if not self.fast_ema.initialized or not self.slow_ema.initialized:
@@ -70,16 +100,41 @@ class EmaCrossStrategy(BaseStrategy):
 
         # ── Entry ────────────────────────────────────────────────────────
         if fast > slow and is_flat:
+            if (
+                self.cfg.use_regime_filter
+                and self._regime is not None
+                and self._regime.is_trending is False
+            ):
+                self.log.debug("Signal suppressed: regime=ranging")
+                return
+
             qty = Quantity.from_str(self.cfg.trade_size)
             # Strategy-local risk gate: skip if notional exceeds limit
             approx_notional = float(qty) * float(bar.close)
-            if approx_notional > self.cfg.max_position_notional_usd:
+            if approx_notional > self._max_notional:
                 self.log.warning(
                     "Signal blocked by strategy risk limit: notional=%.2f limit=%.2f",
                     approx_notional,
-                    self.cfg.max_position_notional_usd,
+                    self._max_notional,
                 )
                 return
+
+            if self.gateway is not None:
+                intent = OrderIntent(
+                    instrument_id=str(self.instrument_id),
+                    side="BUY",
+                    quantity=Decimal(str(qty)),
+                    price=None,
+                    strategy_id=self.strategy_name(),
+                    notional_usd=approx_notional,
+                )
+                open_order_count = len(self.cache.orders_open(self.instrument_id))
+                if not self.gateway.submit(intent, open_order_count=open_order_count):
+                    self.log.warning(
+                        "Signal blocked by ExecutionGateway pre-flight check",
+                    )
+                    return
+
             self.log_signal(OrderSide.BUY, self.instrument_id, qty, reason="ema_cross_up")
             order = self.order_factory.market(
                 instrument_id=self.instrument_id,

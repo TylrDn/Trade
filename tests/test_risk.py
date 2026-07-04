@@ -1,10 +1,16 @@
-"""Risk engine tests."""
+"""Risk engine tests.
+
+Requires prometheus_client (via ops.metrics) for full execution;
+skipped cleanly in minimal environments without that dependency.
+"""
 
 from __future__ import annotations
 
 from decimal import Decimal
 
 import pytest
+
+pytest.importorskip("prometheus_client")
 
 from nautilus_trade.ops.circuit_breaker import CircuitBreaker
 from nautilus_trade.risk.engine import DailyStats, PortfolioRiskEngine
@@ -114,6 +120,36 @@ class TestPortfolioRiskEngine:
         engine.record_fill(-600.0)
         assert engine.is_halted
         engine.resume("operator")
+        assert not engine.is_halted
+
+    def test_open_order_limit_blocks_order(self) -> None:
+        engine = PortfolioRiskEngine()
+        allowed, reason = engine.check_before_order(
+            side="BUY",
+            notional_usd=500.0,
+            current_portfolio_notional_usd=5000.0,
+            current_leverage=1.0,
+            open_order_count=25,
+        )
+        assert not allowed
+        assert "open order" in reason.lower()
+
+    def test_resume_rejected_in_production(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from nautilus_trade.config import system_cfg
+
+        monkeypatch.setattr(system_cfg, "is_live", True)
+        engine = PortfolioRiskEngine()
+        engine.halt("test halt")
+        with pytest.raises(ValueError, match="explicit human operator"):
+            engine.resume("system")
+
+    def test_resume_allowed_in_staging(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from nautilus_trade.config import system_cfg
+
+        monkeypatch.setattr(system_cfg, "is_live", False)
+        engine = PortfolioRiskEngine()
+        engine.halt("test halt")
+        engine.resume("system")
         assert not engine.is_halted
 
 

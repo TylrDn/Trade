@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import pytest
+
 from nautilus_trade.live.reconciler import LiveReconciler
 
 
@@ -61,3 +63,41 @@ class TestLiveReconciler:
             venue_balances={"USDT": Decimal("100")},
         )
         assert "PASSED" in str(result)
+
+    def test_reconciler_trips_circuit_on_balance_mismatch(self) -> None:
+        CircuitBreaker = pytest.importorskip(
+            "nautilus_trade.ops.circuit_breaker"
+        ).CircuitBreaker
+        breaker = CircuitBreaker()
+        rec = LiveReconciler(breaker=breaker)
+        rec.check_balances(
+            internal_balances={"USDT": Decimal("10000")},
+            venue_balances={"USDT": Decimal("9000")},
+            tolerance=Decimal("0.01"),
+        )
+        assert breaker.is_tripped
+
+    def test_reconciler_trips_circuit_on_position_mismatch(self) -> None:
+        CircuitBreaker = pytest.importorskip(
+            "nautilus_trade.ops.circuit_breaker"
+        ).CircuitBreaker
+        breaker = CircuitBreaker()
+        rec = LiveReconciler(breaker=breaker)
+        rec.check_positions(
+            internal_positions={},
+            venue_positions={"BTCUSDT-PERP.BINANCE": Decimal("0.05")},
+            tolerance=Decimal("0.0001"),
+        )
+        assert breaker.is_tripped
+
+    def test_reconciler_no_trip_on_pass(self) -> None:
+        CircuitBreaker = pytest.importorskip(
+            "nautilus_trade.ops.circuit_breaker"
+        ).CircuitBreaker
+        breaker = CircuitBreaker()
+        rec = LiveReconciler(breaker=breaker)
+        rec.check_balances(
+            internal_balances={"USDT": Decimal("10000")},
+            venue_balances={"USDT": Decimal("10000")},
+        )
+        assert not breaker.is_tripped

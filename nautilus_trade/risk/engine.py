@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from nautilus_trade.config import risk_cfg
+from nautilus_trade.config import risk_cfg, system_cfg
 from nautilus_trade.ops.alerts import send_alert
 from nautilus_trade.ops.circuit_breaker import CircuitBreaker
 
@@ -67,6 +67,15 @@ class PortfolioRiskEngine:
 
     def resume(self, operator: str = "system") -> None:
         """Resume trading after manual review."""
+        if system_cfg.is_live and operator == "system":
+            log.error(
+                "Resume rejected in production: operator='system' is not allowed in live env. "
+                "Provide an explicit operator identifier."
+            )
+            raise ValueError(
+                "Trading resume in production requires an explicit human operator identifier, "
+                "not 'system'."
+            )
         log.warning("PORTFOLIO RISK RESUMED by %s", operator)
         self._halted = False
         self.breaker.reset()
@@ -78,8 +87,17 @@ class PortfolioRiskEngine:
         notional_usd: float,
         current_portfolio_notional_usd: float,
         current_leverage: float,
+        open_order_count: int = 0,
     ) -> tuple[bool, str]:
-        """Return (allowed, reason). Call before any live order submission."""
+        """Return (allowed, reason). Call before any live order submission.
+
+        Args:
+            side: Order side (BUY or SELL).
+            notional_usd: Proposed order notional in USD.
+            current_portfolio_notional_usd: Current total portfolio notional.
+            current_leverage: Current portfolio leverage.
+            open_order_count: Number of currently open orders.
+        """
         self.daily.reset_if_new_day()
 
         if self.is_halted:
@@ -95,6 +113,12 @@ class PortfolioRiskEngine:
             return False, (
                 f"Portfolio leverage {current_leverage:.2f}x exceeds limit "
                 f"{risk_cfg.max_leverage:.2f}x"
+            )
+
+        if open_order_count >= risk_cfg.max_open_orders:
+            return False, (
+                f"Open order count {open_order_count} at or above limit "
+                f"{risk_cfg.max_open_orders}"
             )
 
         return True, ""

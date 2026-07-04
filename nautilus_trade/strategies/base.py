@@ -6,7 +6,7 @@ import logging
 from abc import abstractmethod
 from decimal import Decimal
 
-from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderSide, PriceType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.strategy import Strategy
@@ -65,6 +65,8 @@ class BaseStrategy(Strategy):
         position = self.cache.position_for_instrument(instrument_id)  # type: ignore
         if position is None:
             return Decimal(0)
-        return Decimal(str(abs(position.quantity))) * Decimal(
-            str(self.cache.price(instrument_id, price_type=None) or 0)
-        )
+        price = self.cache.price(instrument_id, PriceType.MID)
+        if price is None:
+            log.warning("position_notional: no MID price for %s, returning 0", instrument_id)
+            return Decimal(0)
+        return Decimal(str(abs(position.quantity))) * Decimal(str(price))
