@@ -1,7 +1,8 @@
-"""Strategy unit and integration tests.
+"""Strategy configuration tests.
 
-All strategy tests run via NautilusTrader's BacktestEngine (low-level)
-to ensure deterministic, reproducible results without live credentials.
+Covers EmaCrossConfig construction. BacktestEngine integration tests require
+a populated catalog and full NautilusTrader runtime; run via scripts/run_backtest.py
+or CI with pip install -e ".[dev]".
 
 Requires nautilus_trader and prometheus_client for full execution;
 skipped cleanly in minimal environments without those dependencies.
@@ -37,12 +38,9 @@ class TestEmaCrossConfig:
         assert cfg.fast_period == 5
         assert cfg.slow_period == 20
 
-    def test_fast_must_be_less_than_slow(self) -> None:
-        """Logical constraint: fast period should be less than slow period."""
+    def test_default_flatten_on_stop_is_false(self) -> None:
         cfg = EmaCrossConfig(
             instrument_id="BTCUSDT-PERP.BINANCE",
             bar_type="BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
-            fast_period=5,
-            slow_period=20,
         )
-        assert cfg.fast_period < cfg.slow_period
+        assert cfg.flatten_on_stop is False

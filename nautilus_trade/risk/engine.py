@@ -14,27 +14,31 @@ This module provides:
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from nautilus_trade.config import risk_cfg, system_cfg
 from nautilus_trade.ops.alerts import send_alert
 from nautilus_trade.ops.circuit_breaker import CircuitBreaker
+from nautilus_trade.ops.metrics import PORTFOLIO_HALTED
 
 log = logging.getLogger(__name__)
+
+TripFn = Callable[[str], None]
 
 
 @dataclass
 class DailyStats:
     """Tracks per-day P&L for halt logic."""
 
-    date: date = field(default_factory=lambda: datetime.now(timezone.utc).date())
+    date: date = field(default_factory=lambda: datetime.now(UTC).date())
     realized_pnl_usd: Decimal = Decimal(0)
     fill_count: int = 0
 
     def reset_if_new_day(self) -> None:
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
         if today != self.date:
             log.info("New trading day: resetting daily stats (prev date=%s)", self.date)
             self.date = today
@@ -49,8 +53,13 @@ class PortfolioRiskEngine:
     Call record_fill() after each fill to track daily P&L.
     """
 
-    def __init__(self, breaker: CircuitBreaker | None = None) -> None:
+    def __init__(
+        self,
+        breaker: CircuitBreaker | None = None,
+        trip_fn: TripFn | None = None,
+    ) -> None:
         self.breaker = breaker or CircuitBreaker()
+        self._trip_fn = trip_fn
         self.daily = DailyStats()
         self._halted = False
 
@@ -62,6 +71,7 @@ class PortfolioRiskEngine:
         """Halt all trading activity immediately."""
         if not self._halted:
             self._halted = True
+            PORTFOLIO_HALTED.set(1)
             log.critical("PORTFOLIO RISK HALT: %s", reason)
             send_alert(f"🚨 TRADING HALTED: {reason}", level="critical")
 
@@ -78,6 +88,7 @@ class PortfolioRiskEngine:
             )
         log.warning("PORTFOLIO RISK RESUMED by %s", operator)
         self._halted = False
+        PORTFOLIO_HALTED.set(0)
         self.breaker.reset()
         send_alert(f"✅ Trading resumed by {operator}", level="info")
 
@@ -89,15 +100,7 @@ class PortfolioRiskEngine:
         current_leverage: float,
         open_order_count: int = 0,
     ) -> tuple[bool, str]:
-        """Return (allowed, reason). Call before any live order submission.
-
-        Args:
-            side: Order side (BUY or SELL).
-            notional_usd: Proposed order notional in USD.
-            current_portfolio_notional_usd: Current total portfolio notional.
-            current_leverage: Current portfolio leverage.
-            open_order_count: Number of currently open orders.
-        """
+        """Return (allowed, reason). Call before any live order submission."""
         self.daily.reset_if_new_day()
 
         if self.is_halted:
@@ -108,6 +111,14 @@ class PortfolioRiskEngine:
                 f"Position notional ${notional_usd:.0f} exceeds limit "
                 f"${risk_cfg.max_position_notional_usd:.0f}"
             )
+
+        if side.upper() == "BUY":
+            projected = current_portfolio_notional_usd + notional_usd
+            if projected > risk_cfg.max_portfolio_notional_usd:
+                return False, (
+                    f"Portfolio notional ${projected:.0f} would exceed limit "
+                    f"${risk_cfg.max_portfolio_notional_usd:.0f}"
+                )
 
         if current_leverage > risk_cfg.max_leverage:
             return False, (
@@ -130,8 +141,11 @@ class PortfolioRiskEngine:
         self.daily.fill_count += 1
 
         if self.daily.realized_pnl_usd < -Decimal(str(risk_cfg.max_daily_loss_usd)):
-            self.halt(
+            reason = (
                 f"Daily loss limit hit: "
                 f"${float(self.daily.realized_pnl_usd):.2f} "
                 f"(limit: -${risk_cfg.max_daily_loss_usd:.2f})"
             )
+            self.halt(reason)
+            if self._trip_fn is not None:
+                self._trip_fn("daily_loss_limit")

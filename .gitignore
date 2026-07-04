@@ -43,6 +43,7 @@ Thumbs.db
 .coverage
 htmlcov/
 .pytest_cache/
+pytest-cache-files-*/
 
 # Docker
 *.override.yml

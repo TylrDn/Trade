@@ -8,22 +8,22 @@ lint:
 	mypy nautilus_trade
 
 test:
-	pytest tests/ -v --cov=nautilus_trade --cov-report=term-missing
+	python3 -m pytest tests/ -v --cov=nautilus_trade --cov-report=term-missing
 
 backtest:
-	python scripts/run_backtest.py
+	python3 scripts/run_backtest.py
 
 live:
-	python scripts/run_live.py
+	python3 scripts/run_live.py
 
 flatten:
-	python scripts/flatten_all.py --env production
+	python3 scripts/flatten_all.py --env production
 
 infra-up:
-	docker compose up -d prometheus grafana
+	docker compose up -d prometheus grafana alertmanager
 
 infra-down:
 	docker compose down
 
 promote:
-	python scripts/promote_strategy.py
+	python3 scripts/promote_strategy.py --strategy ema_cross --from research --to staging

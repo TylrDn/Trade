@@ -34,6 +34,7 @@ class EmaCrossConfig(StrategyConfig, frozen=True):
     trade_size: str = "0.01"  # base quantity as string for precision
     max_position_notional_usd: float | None = None
     use_regime_filter: bool = True
+    flatten_on_stop: bool = False
 
 
 class EmaCrossStrategy(BaseStrategy):
@@ -98,7 +99,6 @@ class EmaCrossStrategy(BaseStrategy):
         is_long = position is not None and position.is_open and position.quantity > Decimal(0)
         is_flat = position is None or not position.is_open
 
-        # ── Entry ────────────────────────────────────────────────────────
         if fast > slow and is_flat:
             if (
                 self.cfg.use_regime_filter
@@ -109,7 +109,6 @@ class EmaCrossStrategy(BaseStrategy):
                 return
 
             qty = Quantity.from_str(self.cfg.trade_size)
-            # Strategy-local risk gate: skip if notional exceeds limit
             approx_notional = float(qty) * float(bar.close)
             if approx_notional > self._max_notional:
                 self.log.warning(
@@ -119,37 +118,61 @@ class EmaCrossStrategy(BaseStrategy):
                 )
                 return
 
-            if self.gateway is not None:
-                intent = OrderIntent(
-                    instrument_id=str(self.instrument_id),
-                    side="BUY",
-                    quantity=Decimal(str(qty)),
-                    price=None,
-                    strategy_id=self.strategy_name(),
-                    notional_usd=approx_notional,
-                )
-                open_order_count = len(self.cache.orders_open(self.instrument_id))
-                if not self.gateway.submit(intent, open_order_count=open_order_count):
-                    self.log.warning(
-                        "Signal blocked by ExecutionGateway pre-flight check",
-                    )
-                    return
-
-            self.log_signal(OrderSide.BUY, self.instrument_id, qty, reason="ema_cross_up")
-            order = self.order_factory.market(
-                instrument_id=self.instrument_id,
-                order_side=OrderSide.BUY,
-                quantity=qty,
-                time_in_force=TimeInForce.GTC,
+            intent = OrderIntent(
+                instrument_id=str(self.instrument_id),
+                side="BUY",
+                quantity=Decimal(str(qty)),
+                price=None,
+                strategy_id=self.strategy_name(),
+                notional_usd=approx_notional,
             )
-            self.submit_order(order)
 
-        # ── Exit ─────────────────────────────────────────────────────────
+            def submit_entry() -> None:
+                self.log_signal(OrderSide.BUY, self.instrument_id, qty, reason="ema_cross_up")
+                order = self.order_factory.market(
+                    instrument_id=self.instrument_id,
+                    order_side=OrderSide.BUY,
+                    quantity=qty,
+                    time_in_force=TimeInForce.GTC,
+                )
+                self.submit_order(order)
+
+            self.submit_order_guarded(self.gateway, intent, submit_entry)
+
         elif fast < slow and is_long:
-            self.log.info("[%s] Closing position: ema_cross_down", self.strategy_name())
-            self.close_position(position)  # type: ignore
+            if self.trading_halted(self.gateway):
+                self.log.warning(
+                    "[%s] Exit suppressed: trading halted",
+                    self.strategy_name(),
+                )
+                return
+
+            exit_notional = float(self.position_notional(self.instrument_id))
+            exit_qty = abs(position.quantity)
+            intent = OrderIntent(
+                instrument_id=str(self.instrument_id),
+                side="SELL",
+                quantity=Decimal(str(exit_qty)),
+                price=None,
+                strategy_id=self.strategy_name(),
+                notional_usd=exit_notional if exit_notional > 0 else 0.0,
+            )
+
+            def submit_exit() -> None:
+                self.log.info("[%s] Closing position: ema_cross_down", self.strategy_name())
+                self.close_position(position)
+
+            if exit_notional > 0 or self.gateway is None:
+                self.submit_order_guarded(self.gateway, intent, submit_exit)
+            else:
+                submit_exit()
 
     def on_stop(self) -> None:
         super().on_stop()
         self.cancel_all_orders(self.instrument_id)
-        self.close_all_positions(self.instrument_id)
+        if self.cfg.flatten_on_stop:
+            self.log.warning(
+                "[%s] flatten_on_stop enabled — closing all positions",
+                self.strategy_name(),
+            )
+            self.close_all_positions(self.instrument_id)

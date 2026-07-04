@@ -23,12 +23,12 @@ from nautilus_trader.config import (
     BacktestEngineConfig,
     BacktestRunConfig,
     BacktestVenueConfig,
+    ImportableActorConfig,
     ImportableStrategyConfig,
     LoggingConfig,
     RiskEngineConfig,
 )
 from nautilus_trader.model.data import BarType
-from nautilus_trader.model.identifiers import Venue
 
 from nautilus_trade.catalog import get_catalog
 from nautilus_trade.config import system_cfg
@@ -49,7 +49,7 @@ def build_backtest_config(
     starting_balance: str = "100000 USDT",
 ) -> BacktestRunConfig:
     """Build a fully typed BacktestRunConfig from simple parameters."""
-    catalog = get_catalog()
+    get_catalog()
     bt = BarType.from_str(bar_type)
 
     venue_config = BacktestVenueConfig(
@@ -74,6 +74,13 @@ def build_backtest_config(
                 strategy_path=strategy_path,
                 config_path="",
                 config=strategy_config,
+            )
+        ],
+        actors=[
+            ImportableActorConfig(
+                actor_path="nautilus_trade.actors.regime_filter:RegimeFilterActor",
+                config_path="nautilus_trade.actors.regime_filter:RegimeFilterConfig",
+                config={"bar_type": bar_type},
             )
         ],
         risk_engine=RiskEngineConfig(bypass=False),

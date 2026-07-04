@@ -13,6 +13,7 @@ On mismatch, an alert is sent and the circuit breaker is tripped (when wired).
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import TYPE_CHECKING
@@ -23,6 +24,8 @@ if TYPE_CHECKING:
     from nautilus_trade.ops.circuit_breaker import CircuitBreaker
 
 log = logging.getLogger(__name__)
+
+TripFn = Callable[[str], None]
 
 
 @dataclass
@@ -43,8 +46,22 @@ class LiveReconciler:
     to halt trading until an operator resolves the discrepancy.
     """
 
-    def __init__(self, breaker: CircuitBreaker | None = None) -> None:
+    def __init__(
+        self,
+        breaker: CircuitBreaker | None = None,
+        trip_fn: TripFn | None = None,
+    ) -> None:
         self._breaker = breaker
+        if trip_fn is not None:
+            self._trip_fn = trip_fn
+        elif breaker is not None:
+            self._trip_fn = breaker.trip
+        else:
+            self._trip_fn = None
+
+    def _trip_breaker(self, reason: str) -> None:
+        if self._trip_fn is not None:
+            self._trip_fn(reason)
 
     def check_balances(
         self,
@@ -70,8 +87,7 @@ class LiveReconciler:
         result = ReconciliationResult(passed=not mismatches, mismatches=mismatches)
         if not result.passed:
             send_alert(f"❌ Reconciliation failed: {mismatches}", level="error")
-            if self._breaker is not None:
-                self._breaker.trip("reconciliation_balance_mismatch")
+            self._trip_breaker("reconciliation_balance_mismatch")
         else:
             log.info("Reconciliation passed")
         return result
@@ -100,6 +116,5 @@ class LiveReconciler:
         result = ReconciliationResult(passed=not mismatches, mismatches=mismatches)
         if not result.passed:
             send_alert(f"❌ Position reconciliation failed: {mismatches}", level="error")
-            if self._breaker is not None:
-                self._breaker.trip("reconciliation_position_mismatch")
+            self._trip_breaker("reconciliation_position_mismatch")
         return result

@@ -7,6 +7,7 @@ configured staleness threshold.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.model.data import Bar, BarType
@@ -15,6 +16,7 @@ from nautilus_trader.trading.actor import Actor
 from nautilus_trade.config import risk_cfg
 from nautilus_trade.ops.alerts import send_alert
 from nautilus_trade.ops.circuit_breaker import CircuitBreaker
+from nautilus_trade.ops.metrics import FEED_STALE
 
 log = logging.getLogger(__name__)
 
@@ -23,17 +25,28 @@ _TIMER_NAME = "feed_health_check"
 
 class FeedHealthGuardConfig(ActorConfig, frozen=True):
     bar_type: str
-    stale_seconds: int = risk_cfg.stale_feed_seconds
+    stale_seconds: int | None = None
     check_interval_seconds: int = 10
 
 
 class FeedHealthGuard(Actor):
     """Monitors bar feed freshness and trips the circuit breaker on stale data."""
 
-    def __init__(self, config: FeedHealthGuardConfig, breaker: CircuitBreaker) -> None:
+    def __init__(
+        self,
+        config: FeedHealthGuardConfig,
+        breaker: CircuitBreaker,
+        trip_fn: Callable[[str], None] | None = None,
+    ) -> None:
         super().__init__(config)
         self.cfg = config
         self._breaker = breaker
+        self._trip_fn = trip_fn or breaker.trip
+        self._stale_seconds = (
+            config.stale_seconds
+            if config.stale_seconds is not None
+            else risk_cfg.stale_feed_seconds
+        )
         self.bar_type = BarType.from_str(config.bar_type)
         self._last_bar_ts: int | None = None
 
@@ -47,7 +60,7 @@ class FeedHealthGuard(Actor):
         log.info(
             "FeedHealthGuard started for %s (stale=%ss, interval=%ss)",
             self.cfg.bar_type,
-            self.cfg.stale_seconds,
+            self._stale_seconds,
             self.cfg.check_interval_seconds,
         )
 
@@ -64,7 +77,7 @@ class FeedHealthGuard(Actor):
             return
 
         elapsed_seconds = (now_ns - self._last_bar_ts) / 1e9
-        if elapsed_seconds > self.cfg.stale_seconds:
+        if elapsed_seconds > self._stale_seconds:
             log.critical(
                 "Feed stale: %s seconds since last bar (%s)",
                 elapsed_seconds,
@@ -74,4 +87,5 @@ class FeedHealthGuard(Actor):
                 f"🚨 Feed stale: {elapsed_seconds:.0f}s since last bar",
                 level="critical",
             )
-            self._breaker.trip(f"stale_feed:{self.cfg.bar_type}")
+            FEED_STALE.labels(instrument=self.cfg.bar_type).inc()
+            self._trip_fn(f"stale_feed:{self.cfg.bar_type}")

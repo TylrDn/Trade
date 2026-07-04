@@ -49,6 +49,11 @@ CIRCUIT_TRIPS = Counter(
     ["reason"],
 )
 
+PORTFOLIO_HALTED = Gauge(
+    "trade_portfolio_halted",
+    "1 when portfolio risk engine has halted trading, else 0",
+)
+
 # ── Feed health ───────────────────────────────────────────────────────────────
 FEED_STALE = Counter(
     "trade_feed_stale_total",

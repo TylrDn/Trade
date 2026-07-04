@@ -22,6 +22,10 @@ class RiskConfig(BaseSettings):
 
     max_daily_loss_usd: float = Field(default=500.0, description="Max daily drawdown in USD before halt")
     max_position_notional_usd: float = Field(default=10_000.0, description="Max single position notional")
+    max_portfolio_notional_usd: float = Field(
+        default=50_000.0,
+        description="Max total open portfolio notional across positions",
+    )
     max_leverage: float = Field(default=3.0, description="Max portfolio leverage")
     max_open_orders: int = Field(default=20, description="Max concurrent open orders")
     stale_feed_seconds: int = Field(default=30, description="Seconds before feed considered stale")

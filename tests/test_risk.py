@@ -115,6 +115,32 @@ class TestPortfolioRiskEngine:
         engine.record_fill(-600.0)  # Default limit is 500
         assert engine.is_halted
 
+    def test_daily_loss_trips_breaker(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr("nautilus_trade.ops.event_store.EVENT_LOG_DIR", tmp_path)
+        trips: list[str] = []
+
+        def trip_fn(reason: str) -> None:
+            trips.append(reason)
+
+        engine = PortfolioRiskEngine(trip_fn=trip_fn)
+        engine.record_fill(-600.0)
+        assert engine.is_halted
+        assert "daily_loss_limit" in trips
+
+    def test_portfolio_notional_limit_blocks_buy(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from nautilus_trade.config import risk_cfg
+
+        monkeypatch.setattr(risk_cfg, "max_portfolio_notional_usd", 5000.0)
+        engine = PortfolioRiskEngine()
+        allowed, reason = engine.check_before_order(
+            side="BUY",
+            notional_usd=1000.0,
+            current_portfolio_notional_usd=4500.0,
+            current_leverage=1.0,
+        )
+        assert not allowed
+        assert "portfolio notional" in reason.lower()
+
     def test_resume_clears_halt(self) -> None:
         engine = PortfolioRiskEngine()
         engine.record_fill(-600.0)

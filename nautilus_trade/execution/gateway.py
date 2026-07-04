@@ -1,15 +1,19 @@
 """Execution Gateway.
 
-The single choke-point through which all live order intent flows.
-Before routing any order to NautilusTrader for submission, this gateway:
+Advisory pre-flight choke point for live order intent. Before a strategy
+calls submit_order(), it should consult this gateway via
+BaseStrategy.submit_order_guarded().
+
+The gateway:
   1. Checks the circuit breaker
   2. Runs portfolio-level risk checks
-  3. Validates order parameters
-  4. Emits metrics and structured logs
+  3. Emits metrics and structured logs
 
-No code outside this module should submit live orders directly.
-In backtesting, this gateway is bypassed (strategies call submit_order
-directly, as designed by NautilusTrader).
+This is application-level advisory enforcement only. Emergency flatten,
+on_stop flatten (when configured), and direct submit_order() calls bypass
+this layer. True OMS-level blocking would require a deeper NautilusTrader hook.
+
+In backtesting, the gateway is not wired (strategies submit directly).
 """
 
 from __future__ import annotations
@@ -38,7 +42,7 @@ class OrderIntent:
 
 
 class ExecutionGateway:
-    """Validates and routes order intents through risk controls."""
+    """Advisory pre-flight validation for order intents."""
 
     def __init__(
         self,
@@ -55,11 +59,9 @@ class ExecutionGateway:
         current_leverage: float = 1.0,
         open_order_count: int = 0,
     ) -> bool:
-        """Validate and approve the intent. Returns True if allowed.
+        """Return True if the intent passes pre-flight checks.
 
-        Actual NautilusTrader order submission happens inside the strategy
-        via self.submit_order(). This gateway is called by the strategy
-        before that call as a pre-flight check.
+        Actual order submission remains the strategy's responsibility after approval.
         """
         if self.breaker.is_tripped:
             log.warning("GATEWAY BLOCKED (circuit open): %s", intent)

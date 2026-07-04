@@ -10,6 +10,15 @@ groups:
           summary: "Trading circuit breaker tripped"
           description: "A circuit breaker trip was recorded in the last 5 minutes."
 
+      - alert: PortfolioRiskHalted
+        expr: trade_portfolio_halted == 1
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Portfolio risk engine halted trading"
+          description: "Application-level portfolio halt is active."
+
       - alert: DailyLossApproachingLimit
         expr: trade_daily_pnl_usd < -400
         for: 1m
@@ -17,7 +26,7 @@ groups:
           severity: warning
         annotations:
           summary: "Daily P&L approaching loss limit"
-          description: "Daily P&L is {{ $value }} USD (limit: -500)."
+          description: "Daily P&L is {{ $value }} USD (warning threshold -400; configure RISK_MAX_DAILY_LOSS_USD)."
 
       - alert: FeedStalenessDetected
         expr: increase(trade_feed_stale_total[2m]) > 0

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from abc import abstractmethod
+from collections.abc import Callable
 from decimal import Decimal
 
 from nautilus_trader.model.enums import OrderSide, PriceType
@@ -11,24 +12,27 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.strategy import Strategy
 
+from nautilus_trade.execution.gateway import ExecutionGateway, OrderIntent
+from nautilus_trade.portfolio.stats import (
+    portfolio_leverage,
+    portfolio_notional_usd,
+    total_open_order_count,
+)
+
 log = logging.getLogger(__name__)
 
 
 class BaseStrategy(Strategy):
     """Extends NautilusTrader Strategy with shared risk-aware order helpers.
 
-    All strategies in this system should inherit from BaseStrategy to
-    ensure consistent logging, risk pre-checks, and metric emission.
+    ExecutionGateway integration is advisory pre-flight only. Strategies must
+    call submit_order_guarded() to consult the gateway before submission.
     """
-
-    # ── Required overrides ────────────────────────────────────────────────
 
     @abstractmethod
     def strategy_name(self) -> str:
         """Human-readable strategy identifier."""
         ...
-
-    # ── Lifecycle logging ─────────────────────────────────────────────────
 
     def on_start(self) -> None:
         log.info("[%s] Strategy starting", self.strategy_name())
@@ -41,8 +45,6 @@ class BaseStrategy(Strategy):
 
     def on_dispose(self) -> None:
         log.info("[%s] Strategy disposing", self.strategy_name())
-
-    # ── Helpers ───────────────────────────────────────────────────────────
 
     def log_signal(
         self,
@@ -62,7 +64,7 @@ class BaseStrategy(Strategy):
 
     def position_notional(self, instrument_id: InstrumentId) -> Decimal:
         """Return the current open position notional for an instrument."""
-        position = self.cache.position_for_instrument(instrument_id)  # type: ignore
+        position = self.cache.position_for_instrument(instrument_id)
         if position is None:
             return Decimal(0)
         price = self.cache.price(instrument_id, PriceType.MID)
@@ -70,3 +72,54 @@ class BaseStrategy(Strategy):
             log.warning("position_notional: no MID price for %s, returning 0", instrument_id)
             return Decimal(0)
         return Decimal(str(abs(position.quantity))) * Decimal(str(price))
+
+    def trading_halted(self, gateway: ExecutionGateway | None) -> bool:
+        """Return True when portfolio-level trading is halted."""
+        if gateway is None:
+            return False
+        return gateway.risk.is_halted or gateway.breaker.is_tripped
+
+    def gateway_order_context(
+        self,
+        gateway: ExecutionGateway | None,
+    ) -> tuple[float, float, int]:
+        """Return portfolio notional, leverage, and open order count for gateway checks."""
+        if gateway is None:
+            return 0.0, 1.0, 0
+        return (
+            portfolio_notional_usd(self.cache, self.portfolio),
+            portfolio_leverage(self.cache, self.portfolio),
+            total_open_order_count(self.cache),
+        )
+
+    def submit_order_guarded(
+        self,
+        gateway: ExecutionGateway | None,
+        intent: OrderIntent,
+        submit_fn: Callable[[], None],
+    ) -> bool:
+        """Run advisory gateway pre-flight, then submit if approved.
+
+        Returns True when submission proceeds, False when blocked or no gateway.
+        When gateway is None (backtest), submission proceeds without checks.
+        """
+        if gateway is None:
+            submit_fn()
+            return True
+
+        portfolio_notional, leverage, open_order_count = self.gateway_order_context(gateway)
+        if not gateway.submit(
+            intent,
+            current_portfolio_notional_usd=portfolio_notional,
+            current_leverage=leverage,
+            open_order_count=open_order_count,
+        ):
+            log.warning(
+                "[%s] Order blocked by ExecutionGateway pre-flight: %s",
+                self.strategy_name(),
+                intent,
+            )
+            return False
+
+        submit_fn()
+        return True
