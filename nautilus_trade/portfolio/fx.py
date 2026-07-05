@@ -24,8 +24,11 @@ class UsdtPegConverter:
         return None
 
 
-class MidPriceConverter:
-    """Convert using cache MID prices when instrument quote matches currency."""
+class CacheMidConverter:
+    """FX converter with peg fallback; mid-price lookup is v2 (not implemented).
+
+    TODO v2: resolve non-pegged currencies via cache MID prices for matching instruments.
+    """
 
     def __init__(self, cache: Any, fallback: FxConverter | None = None) -> None:
         self._cache = cache

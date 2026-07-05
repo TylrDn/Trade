@@ -7,10 +7,7 @@ import argparse
 import sys
 from pathlib import Path
 
-_SCRIPTS = Path(__file__).resolve().parent
-sys.path.insert(0, str(_SCRIPTS))
-
-from eventstore_utils import event_types, load_events
+from nautilus_trade.ops.eventstore_utils import event_types, load_events
 
 REQUIRED_EVENTS = {
     "reconciliation_startup_timing",

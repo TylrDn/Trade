@@ -6,12 +6,8 @@ from __future__ import annotations
 import argparse
 from datetime import UTC, datetime
 from pathlib import Path
-import sys
 
-_SCRIPTS = Path(__file__).resolve().parent
-sys.path.insert(0, str(_SCRIPTS))
-
-from eventstore_utils import load_events
+from nautilus_trade.ops.eventstore_utils import load_events
 
 FAILURE_EVENTS = frozenset(
     {

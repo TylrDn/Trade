@@ -5,7 +5,7 @@ realized_pnl on each fill; we track deltas for daily loss accounting.
 
 Settlement amounts are converted to USD via ``FxConverter`` (default
 ``UsdtPegConverter``: 1:1 peg for USDT/USD stablecoins). Non-pegged
-currencies require ``MidPriceConverter`` or another converter implementation.
+currencies require ``CacheMidConverter`` or another converter implementation.
 """
 
 from __future__ import annotations

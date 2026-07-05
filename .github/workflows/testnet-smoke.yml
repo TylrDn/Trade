@@ -14,7 +14,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install --upgrade pip && pip install pytest
+      - run: pip install --upgrade pip && pip install -e ".[dev]"
       - run: python3 scripts/smoke_testnet.py --dry-run
       - run: pytest tests/test_smoke_testnet.py tests/test_soak_status.py tests/test_evidence_parser.py -v
 
