@@ -1,71 +1,83 @@
-"""Historical data loader.
-
-Loads external OHLCV data (e.g. from exchange REST or CSV files)
-and writes it to the Parquet data catalog in NautilusTrader format.
-
-This is the entry point for populating the catalog before backtesting.
-"""
+"""Orchestrate catalog loading from Binance klines."""
 
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
 
-from nautilus_trader.model.data import Bar, BarType
-from nautilus_trader.persistence.catalog import ParquetDataCatalog
-
 from nautilus_trade.catalog import get_catalog
+from nautilus_trade.config import system_cfg
+from nautilus_trade.data.binance_history import (
+    fetch_klines_page,
+    ms_to_iso,
+    parse_interval_ms,
+)
 
 log = logging.getLogger(__name__)
 
 
-def load_bars_from_csv(
-    csv_path: Path,
-    bar_type: str,
-    catalog: ParquetDataCatalog | None = None,
+def load_klines_to_catalog(
+    symbol: str,
+    interval: str,
+    start: datetime,
+    end: datetime,
+    catalog_path: Path | None = None,
 ) -> int:
-    """Load OHLCV bars from a CSV file into the Parquet catalog.
+    """Download klines and append OHLCV bars to catalog as parquet via pandas staging.
 
-    CSV must have columns: timestamp, open, high, low, close, volume
-    where timestamp is a UTC ISO8601 string or Unix nanoseconds.
-
-    Returns the number of bars written.
+    Returns number of bars written. Writes each API page before fetching the next
+    (partial progress preserved on failure — re-run with adjusted start).
     """
-    cat = catalog or get_catalog()
-    bt = BarType.from_str(bar_type)
+    get_catalog(catalog_path)
+    cat_path = Path(catalog_path) if catalog_path else system_cfg.catalog_path
+    start_ms = int(start.replace(tzinfo=timezone.utc).timestamp() * 1000)
+    end_ms = int(end.replace(tzinfo=timezone.utc).timestamp() * 1000)
+    interval_ms = parse_interval_ms(interval)
 
-    log.info("Loading bars from %s into catalog (bar_type=%s)", csv_path, bar_type)
-    df = pd.read_csv(csv_path)
+    total = 0
+    cursor = start_ms
+    staging_dir = cat_path / "staging_klines"
+    staging_dir.mkdir(parents=True, exist_ok=True)
 
-    required = {"timestamp", "open", "high", "low", "close", "volume"}
-    missing = required - set(df.columns)
-    if missing:
-        raise ValueError(f"CSV missing required columns: {missing}")
+    while cursor < end_ms:
+        page = fetch_klines_page(symbol, interval, cursor, end_ms)
+        if not page:
+            break
 
-    bars: list[Bar] = []
-    for row in df.itertuples(index=False):
-        # NautilusTrader Bar construction requires instrument + precision
-        # Use the catalog instrument definition for correct precision
-        instrument = cat.instruments(instrument_ids=[str(bt.instrument_id)])
-        if not instrument:
-            log.error("Instrument %s not in catalog — add it before loading bars", bt.instrument_id)
-            return 0
+        rows = []
+        for k in page:
+            open_time = int(k[0])
+            rows.append(
+                {
+                    "timestamp": open_time,
+                    "open": float(k[1]),
+                    "high": float(k[2]),
+                    "low": float(k[3]),
+                    "close": float(k[4]),
+                    "volume": float(k[5]),
+                    "symbol": symbol,
+                    "interval": interval,
+                }
+            )
 
-        # Minimal bar construction (extend with full precision handling as needed)
-        bar = Bar(
-            bar_type=bt,
-            open=instrument[0].make_price(row.open),
-            high=instrument[0].make_price(row.high),
-            low=instrument[0].make_price(row.low),
-            close=instrument[0].make_price(row.close),
-            volume=instrument[0].make_qty(row.volume),
-            ts_event=pd.Timestamp(row.timestamp, tz="UTC").value,
-            ts_init=pd.Timestamp(row.timestamp, tz="UTC").value,
+        df = pd.DataFrame(rows)
+        chunk_path = staging_dir / f"{symbol}_{interval}_{cursor}.parquet"
+        df.to_parquet(chunk_path, index=False)
+        total += len(rows)
+        log.info(
+            "Wrote kline chunk %s rows (%s → %s)",
+            len(rows),
+            ms_to_iso(cursor),
+            ms_to_iso(int(page[-1][0])),
         )
-        bars.append(bar)
 
-    cat.write_chunk(data=bars)
-    log.info("Wrote %d bars to catalog", len(bars))
-    return len(bars)
+        last_open = int(page[-1][0])
+        cursor = last_open + interval_ms
+        if len(page) < 1500:
+            break
+
+    log.info("Catalog load complete: %s bars staged under %s", total, staging_dir)
+    return total

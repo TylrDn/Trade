@@ -1,1 +1,1 @@
-"""Data ingestion: historical loader and live feed management."""
+"""Historical market data loading for Parquet catalog."""

@@ -87,7 +87,8 @@ jobs:
         run: |
           pytest tests/test_risk.py tests/test_fill_tracker_actor.py \
             tests/test_reconciliation_actor.py tests/test_feed_health.py \
-            tests/test_exit_guarded.py tests/test_staging_env.py -v
+            tests/test_exit_guarded.py tests/test_staging_env.py \
+            tests/test_strategy_gateway_contract.py -v
         env:
           TRADE_ENV: staging
           CATALOG_PATH: /tmp/test_catalog

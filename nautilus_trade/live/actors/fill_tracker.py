@@ -15,6 +15,7 @@ from nautilus_trader.trading.actor import Actor
 from nautilus_trade.config import system_cfg
 from nautilus_trade.ops.metrics import (
     DAILY_PNL_USD,
+    FILL_LATENCY_SECONDS,
     PNL_TRACKING_DEGRADED,
 )
 from nautilus_trade.portfolio.pnl import realized_pnl_delta_usd
@@ -62,6 +63,15 @@ class FillTrackerActor(Actor):
             "realized_pnl_usd": realized_pnl,
             "pnl_source": pnl_source,
         }
+        latency_seconds = self._runtime.order_timing.pop_latency_seconds(
+            str(event.client_order_id),
+            event.ts_event,
+        )
+        if latency_seconds is not None:
+            fill_payload["fill_latency_ms"] = round(latency_seconds * 1000, 2)
+            FILL_LATENCY_SECONDS.labels(instrument=str(event.instrument_id)).observe(
+                latency_seconds
+            )
 
         if pnl_source == "unavailable":
             log.critical(

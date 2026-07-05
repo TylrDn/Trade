@@ -34,6 +34,7 @@ class EmaCrossConfig(StrategyConfig, frozen=True):
     trade_size: str = "0.01"  # base quantity as string for precision
     max_position_notional_usd: float | None = None
     use_regime_filter: bool = True
+    block_entries_until_regime: bool = False
     flatten_on_stop: bool = False
 
 
@@ -58,6 +59,13 @@ class EmaCrossStrategy(BaseStrategy):
             if config.max_position_notional_usd is not None
             else risk_cfg.max_position_notional_usd
         )
+
+    def _block_entries_until_regime(self) -> bool:
+        from nautilus_trade.config import system_cfg
+
+        if self.cfg.block_entries_until_regime:
+            return True
+        return system_cfg.block_entries_until_regime and not system_cfg.is_research
 
     def strategy_name(self) -> str:
         return f"EmaCross({self.cfg.fast_period}/{self.cfg.slow_period})"
@@ -100,6 +108,9 @@ class EmaCrossStrategy(BaseStrategy):
         is_flat = position is None or not position.is_open
 
         if fast > slow and is_flat:
+            if self.cfg.use_regime_filter and self._block_entries_until_regime() and self._regime is None:
+                self.log.debug("Signal suppressed: awaiting initial regime signal")
+                return
             if (
                 self.cfg.use_regime_filter
                 and self._regime is not None

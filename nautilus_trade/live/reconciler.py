@@ -123,3 +123,23 @@ class LiveReconciler:
             send_alert(f"❌ Position reconciliation failed: {mismatches}", level="error")
             self._trip_breaker("reconciliation_position_mismatch")
         return result
+
+    def check_open_orders(
+        self,
+        internal_client_ids: frozenset[str],
+        venue_client_ids: frozenset[str],
+    ) -> ReconciliationResult:
+        """Compare open order client IDs between internal cache and venue."""
+        missing_at_venue = internal_client_ids - venue_client_ids
+        phantom_at_venue = venue_client_ids - internal_client_ids
+        mismatches: list[str] = []
+        if missing_at_venue:
+            mismatches.append(f"missing_at_venue={sorted(missing_at_venue)}")
+        if phantom_at_venue:
+            mismatches.append(f"phantom_at_venue={sorted(phantom_at_venue)}")
+
+        result = ReconciliationResult(passed=not mismatches, mismatches=mismatches)
+        if not result.passed:
+            send_alert(f"Open order reconciliation failed: {mismatches}", level="error")
+            self._trip_breaker("reconciliation_open_orders_mismatch")
+        return result

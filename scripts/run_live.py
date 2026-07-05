@@ -22,6 +22,7 @@ from nautilus_trade.adapters.binance_config import (
 from nautilus_trade.config import system_cfg
 from nautilus_trade.live.node import build_live_trading_node
 from nautilus_trade.live.runtime import create_live_runtime, unbind_live_runtime
+from nautilus_trade.ops.logging_setup import configure_observability
 from nautilus_trade.ops.metrics import start_metrics_server
 
 logging.basicConfig(level="INFO", format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -37,6 +38,7 @@ DEFAULT_STRATEGY_CONFIG = {
 
 
 def main() -> None:
+    configure_observability()
     log.info("Starting live node: env=%s", system_cfg.trade_env.value)
 
     if system_cfg.is_live:

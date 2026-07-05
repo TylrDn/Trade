@@ -13,8 +13,8 @@ class TestLiveReconciler:
     def test_balance_reconciliation_passes_when_matching(self) -> None:
         rec = LiveReconciler()
         result = rec.check_balances(
-            internal_balances={"USDT": Decimal("10000")},
-            venue_balances={"USDT": Decimal("10000")},
+            internal_balances={"USDT": Decimal("10000"), "BTC": Decimal("0.25")},
+            venue_balances={"USDT": Decimal("10000"), "BTC": Decimal("0.25")},
         )
         assert result.passed
         assert result.mismatches == []
@@ -102,3 +102,8 @@ class TestLiveReconciler:
             venue_balances={"USDT": Decimal("10000")},
         )
         assert not breaker.is_tripped
+
+    def test_open_orders_reconciliation_detects_phantom(self) -> None:
+        rec = LiveReconciler()
+        result = rec.check_open_orders(frozenset(), frozenset({"phantom-order"}))
+        assert not result.passed

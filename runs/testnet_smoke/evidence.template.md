@@ -45,11 +45,12 @@ Optional: `python3 -m pytest tests/test_live_wiring.py tests/test_live_node.py -
 
 - [ ] Startup reconciliation ran (default delay 15s)
 - [ ] EventStore contains `reconciliation_startup_timing` with elapsed vs configured delay
+- [ ] Open-order reconciliation checked (`reconciliation_ok` includes `open_orders: PASS`)
 - [ ] Outcome event type:
 
 ```
-reconciliation pass (log only) | reconciliation_failed | reconciliation_mapping_warning |
-reconciliation_missing_credentials | reconciliation_fetch_failed
+reconciliation_ok | reconciliation_failed | reconciliation_mapping_warning |
+reconciliation_open_orders_mismatch | reconciliation_missing_credentials | reconciliation_fetch_failed
 ```
 
 Event excerpt:

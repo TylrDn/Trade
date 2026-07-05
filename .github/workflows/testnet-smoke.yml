@@ -1,0 +1,35 @@
+name: Testnet Smoke
+
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+    branches: [main]
+
+jobs:
+  smoke-dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install --upgrade pip && pip install pytest
+      - run: python3 scripts/smoke_testnet.py --dry-run
+      - run: pytest tests/test_smoke_testnet.py tests/test_soak_status.py tests/test_evidence_parser.py -v
+
+  smoke-live:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install --upgrade pip && pip install -e ".[dev]"
+      - run: python3 scripts/smoke_testnet.py --events ./logs/events/events_test.jsonl
+        env:
+          TRADE_ENV: staging
+          BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
+          BINANCE_API_SECRET: ${{ secrets.BINANCE_API_SECRET }}
+          BINANCE_TESTNET: "true"

@@ -74,7 +74,7 @@ Expect:
 
 - Breaker tripped
 - `circuit_breaker_tripped` in EventStore with reason `stale_feed:...` or `feed_startup_timeout:...`
-- `trade_feed_stale_total` increment in metrics
+- `trade_feed_stale_total` increment in metrics (**once per stale episode**, not on every health poll)
 
 ## 5. Emergency flatten
 
@@ -100,12 +100,42 @@ After manual review:
 - In production, `resume()` / `reset_breaker()` require explicit operator ID
 - Document operator name and reason in promotion manifest
 
-## 7. Promotion attestation
+## 7. Seven-day staging soak
+
+**Definition:** 7 **cumulative clean UTC days** (not calendar days from first start).
+
+| Rule | Behavior |
+|------|----------|
+| Clean day | No `reconciliation_failed`, `reconciliation_open_orders_mismatch`, or `reconciliation_missing_credentials` in EventStore |
+| Failure | Soak streak **resets to zero**; fix root cause before restarting count |
+| Pause overnight | Does **not** reset streak; recon failure **does** reset streak |
+
+Track daily:
+
+```bash
+python3 scripts/soak_status.py --events ./logs/events/events_<run_id>.jsonl
+```
+
+**Failure runbook:**
+
+1. On recon failure: halt promotion timeline; triage EventStore payload
+2. Do not count failure day toward 7-day streak
+3. After fix: confirm `reconciliation_ok` via smoke script or live node
+4. Restart 7-day counter from next clean UTC day
+5. Record failure + fix in evidence file appendix
+
+Dry-run smoke assertions in CI (no credentials):
+
+```bash
+python3 scripts/smoke_testnet.py --dry-run
+```
+
+## 8. Promotion attestation
 
 Record results in promotion manifest via:
 
 ```bash
-python3 scripts/promote_strategy.py --strategy ema_cross --from staging --to production --operator <name>
+python3 scripts/promote_strategy.py --strategy ema_cross --from staging --to production --operator <name> --evidence runs/testnet_smoke/evidence_YYYY-MM-DD_<run_id>.md
 ```
 
 Gates reference (from promote script):
@@ -118,6 +148,6 @@ Gates reference (from promote script):
 
 ## Explicitly out of scope
 
-- Automated testnet CI (deferred — secrets, flake, market hours)
-- OMS-level order blocking
-- Multi-currency PnL validation
+- Fully automated promotion without operator attestation
+- Kraken venue reconciliation (Binance USDT-M only today)
+- Automatic 7-day soak (operator-tracked via `soak_status.py`)

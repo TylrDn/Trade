@@ -113,7 +113,7 @@ python3 scripts/flatten_all.py --env production
 
 | Control | Enforcement level | Notes |
 |---|---|---|
-| `ExecutionGateway` | Advisory pre-flight | Strategies must call `submit_order_guarded()` / `submit_exit_guarded()`. Exits fail closed when MID price is missing and the gateway is wired. Emergency flatten and optional `flatten_on_stop` bypass the gateway. OMS-level blocking is future work. **EmaCross** guarded paths are protected by `tests/test_strategy_gateway_contract.py`. |
+| `ExecutionGateway` | Advisory + OMS block on direct submit | Strategies use `submit_order_guarded()` / `submit_exit_guarded()`. Direct `submit_order()` / `close_position()` blocked in staging/production when gateway wired (no orphaned engine state). Emergency flatten and `flatten_on_stop` bypass documented. |
 | Daily P&L / halt | Application layer | Derived from Nautilus `position.realized_pnl` deltas (USDT-settled scope). Unresolved PnL in staging/production halts trading and trips the breaker — it is **not** recorded as zero loss. |
 | Feed health | Fail-closed in staging/production | Stale bars trip the breaker. If no first bar arrives within `RISK_FEED_STARTUP_GRACE_SECONDS`, startup timeout trips the breaker. Research allows startup without first bar. |
 | Portfolio notional | Fail-closed in staging/production | Gateway blocks new orders when any open position lacks a MID price. `trade_portfolio_notional_incomplete=1` when strict notional is unknown; notional gauge is not updated with partial sums. |
@@ -121,7 +121,7 @@ python3 scripts/flatten_all.py --env production
 | Circuit breaker reset | Operator-guarded in production | `reset()` and `resume()` require an explicit operator ID in `TRADE_ENV=production`. |
 | Emergency flatten | Intentional bypass | Market orders; waits for flat or timeout; documented slippage risk. |
 | Normal shutdown | Positions preserved by default | `EmaCrossConfig.flatten_on_stop` defaults to `false`. |
-| Metrics | Honest semantics | `trade_orders_submitted_total` counts gateway approvals, not venue acks. Fill latency is not wired yet. Alert thresholds use exported gauges (`trade_risk_max_daily_loss_usd`) set at metrics server start from `RISK_*` config. |
+| Metrics | Honest semantics | `trade_orders_submitted_total` counts gateway approvals. `trade_fill_latency_seconds` records approval-to-fill when submit timestamp known. Alert thresholds use exported gauges set at metrics server start. |
 
 **EmaCross intentional gateway bypasses** (documented, not guarded):
 
@@ -136,6 +136,8 @@ python3 scripts/flatten_all.py --env production
 python3 -m pytest tests/ -v
 make test-integration   # LiveRuntime / TradingNode composition smoke tests
 make test-staging       # Fail-closed safety tests under TRADE_ENV=staging
+python3 scripts/smoke_testnet.py --dry-run  # CI-safe smoke assertion check
+python3 scripts/load_catalog.py --symbol BTCUSDT --start 2024-01-01T00:00:00 --end 2024-01-31T00:00:00
 ```
 
 Manual testnet validation (not CI): see [docs/testnet_smoke.md](docs/testnet_smoke.md). Store evidence in [`runs/testnet_smoke/`](runs/testnet_smoke/) (template + BLOCKED placeholder committed; dated evidence files added after manual runs).
@@ -144,13 +146,21 @@ In minimal environments without `nautilus_trader` / `prometheus_client`, heavy-d
 
 ---
 
+## Operational tooling
+
+- **Kill switch:** `python3 scripts/kill_switch.py --reason ... --operator ...` (trips breaker; run flatten separately)
+- **Smoke validation:** `python3 scripts/smoke_testnet.py --dry-run` (CI) or `--events ./logs/events/events_<run_id>.jsonl`
+- **Soak tracking:** `python3 scripts/soak_status.py --events ./logs/events/events_<run_id>.jsonl`
+- **Catalog loader:** `python3 scripts/load_catalog.py` (see `--help` for partial-download resume notes)
+- **Logfire:** optional via `LOGFIRE_TOKEN` (never blocks emergency flatten on bootstrap failure)
+- **Testnet CI:** `.github/workflows/testnet-smoke.yml` (dry-run on push; live via `workflow_dispatch`)
+
 ## Planned / not yet implemented
 
-- KillSwitch module (README previously listed it; use circuit breaker + flatten for now)
-- Historical data loader under `nautilus_trade/data/`
-- Logfire integration (`LOGFIRE_TOKEN` in `.env.example` is reserved)
-- Order fill latency metric (requires submit-timestamp tracking)
-- True testnet live smoke in CI (manual ops validation only today)
+- Kraken venue adapter and reconciliation
+- Nautilus exec-engine order-level reconciliation (v2)
+- Automatic catalog resume cursor (loader v1 writes per-chunk staging only)
+- Full multi-currency FX desk (v1 converter protocol + USDT default only)
 
 ---
 

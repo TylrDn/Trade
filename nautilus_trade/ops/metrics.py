@@ -12,7 +12,7 @@ import logging
 import threading
 import time
 
-from prometheus_client import Counter, Gauge, start_http_server
+from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
 from nautilus_trade.config import ops_cfg, risk_cfg
 
@@ -21,7 +21,7 @@ _metrics_start_monotonic: float | None = None
 
 # ── Order flow ────────────────────────────────────────────────────────────────
 # trade_orders_submitted_total counts gateway pre-flight approvals, not venue acks.
-# Fill latency (submit → fill) is not wired yet; requires submit timestamp tracking.
+# Fill latency uses OrderTimingTracker submit timestamps on LiveRuntime.
 ORDER_SUBMITTED = Counter(
     "trade_orders_submitted_total",
     "Total orders approved by ExecutionGateway pre-flight",
@@ -32,6 +32,13 @@ ORDER_BLOCKED = Counter(
     "trade_orders_blocked_total",
     "Total orders blocked by risk or circuit breaker",
     ["reason", "strategy"],
+)
+
+FILL_LATENCY_SECONDS = Histogram(
+    "trade_fill_latency_seconds",
+    "Gateway approval to fill latency in seconds",
+    ["instrument"],
+    buckets=(0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0),
 )
 
 # ── Risk ──────────────────────────────────────────────────────────────────────

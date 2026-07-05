@@ -21,7 +21,7 @@ from nautilus_trader.config import (
 )
 from nautilus_trader.live.node import TradingNode
 
-from nautilus_trade.config import system_cfg
+from nautilus_trade.config import recon_cfg, system_cfg
 from nautilus_trade.live.runtime import LiveRuntime, bind_live_runtime, unbind_live_runtime
 
 log = logging.getLogger(__name__)
@@ -79,7 +79,7 @@ def build_live_trading_node(
         ImportableActorConfig(
             actor_path="nautilus_trade.live.factories:create_reconciliation_actor",
             config_path="nautilus_trade.live.actors.reconciliation:ReconciliationActorConfig",
-            config={"bar_type": bar_type, "venue": venue},
+            config={"bar_type": bar_type, "venue": venue, "startup_delay_seconds": recon_cfg.startup_delay_seconds},
         ),
     ]
 

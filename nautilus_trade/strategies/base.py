@@ -6,12 +6,14 @@ import logging
 from abc import abstractmethod
 from collections.abc import Callable
 from decimal import Decimal
+from typing import TYPE_CHECKING, Any
 
 from nautilus_trader.model.enums import OrderSide, PriceType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.strategy import Strategy
 
+from nautilus_trade.config import system_cfg
 from nautilus_trade.execution.gateway import ExecutionGateway, OrderIntent
 from nautilus_trade.portfolio.stats import (
     portfolio_leverage,
@@ -19,15 +21,35 @@ from nautilus_trade.portfolio.stats import (
     total_open_order_count,
 )
 
+if TYPE_CHECKING:
+    from nautilus_trade.ops.event_store import EventStore
+    from nautilus_trade.ops.order_timing import OrderTimingTracker
+
 log = logging.getLogger(__name__)
 
 
 class BaseStrategy(Strategy):
-    """Extends NautilusTrader Strategy with shared risk-aware order helpers.
+    """Extends NautilusTrader Strategy with shared risk-aware order helpers."""
 
-    ExecutionGateway integration is advisory pre-flight only. Strategies must
-    call submit_order_guarded() to consult the gateway before submission.
-    """
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._execution_gateway: ExecutionGateway | None = None
+        self._event_store: EventStore | None = None
+        self._order_timing_tracker: OrderTimingTracker | None = None
+        self._guarded_submit = False
+        self._pending_submit_ts_ns: int | None = None
+
+    def bind_execution_gateway(
+        self,
+        gateway: ExecutionGateway | None,
+        *,
+        event_store: EventStore | None = None,
+        order_timing_tracker: OrderTimingTracker | None = None,
+    ) -> None:
+        """Wire live OMS enforcement and fill latency tracking."""
+        self._execution_gateway = gateway
+        self._event_store = event_store
+        self._order_timing_tracker = order_timing_tracker
 
     @abstractmethod
     def strategy_name(self) -> str:
@@ -45,6 +67,47 @@ class BaseStrategy(Strategy):
 
     def on_dispose(self) -> None:
         log.info("[%s] Strategy disposing", self.strategy_name())
+
+    def _record_oms_bypass(self, method: str) -> None:
+        log.critical(
+            "[%s] OMS bypass blocked: direct %s with gateway wired",
+            self.strategy_name(),
+            method,
+        )
+        if self._event_store is not None:
+            self._event_store.record(
+                "oms_bypass_attempt",
+                {"strategy": self.strategy_name(), "method": method},
+            )
+
+    def submit_order(self, order: Any) -> None:
+        if (
+            self._execution_gateway is not None
+            and not self._guarded_submit
+            and not system_cfg.is_research
+        ):
+            self._record_oms_bypass("submit_order")
+            return
+        super().submit_order(order)
+        if (
+            self._guarded_submit
+            and self._order_timing_tracker is not None
+            and self._pending_submit_ts_ns is not None
+        ):
+            self._order_timing_tracker.record(
+                str(order.client_order_id),
+                self._pending_submit_ts_ns,
+            )
+
+    def close_position(self, position: Any, **kwargs: Any) -> None:
+        if (
+            self._execution_gateway is not None
+            and not self._guarded_submit
+            and not system_cfg.is_research
+        ):
+            self._record_oms_bypass("close_position")
+            return
+        super().close_position(position, **kwargs)
 
     def log_signal(
         self,
@@ -103,11 +166,7 @@ class BaseStrategy(Strategy):
         intent: OrderIntent,
         submit_fn: Callable[[], None],
     ) -> bool:
-        """Run advisory gateway pre-flight, then submit if approved.
-
-        Returns True when submission proceeds, False when blocked or no gateway.
-        When gateway is None (backtest), submission proceeds without checks.
-        """
+        """Run advisory gateway pre-flight, then submit if approved."""
         if gateway is None:
             submit_fn()
             return True
@@ -126,7 +185,13 @@ class BaseStrategy(Strategy):
             )
             return False
 
-        submit_fn()
+        self._pending_submit_ts_ns = self.clock.timestamp_ns()
+        self._guarded_submit = True
+        try:
+            submit_fn()
+        finally:
+            self._guarded_submit = False
+            self._pending_submit_ts_ns = None
         return True
 
     def submit_exit_guarded(
@@ -135,12 +200,7 @@ class BaseStrategy(Strategy):
         intent: OrderIntent,
         submit_fn: Callable[[], None],
     ) -> bool:
-        """Run gateway pre-flight for exit orders.
-
-        When the gateway is wired and exit notional is unknown (MID price missing),
-        block the exit rather than bypassing safety checks. Backtest paths without
-        a gateway proceed without checks.
-        """
+        """Run gateway pre-flight for exit orders."""
         if gateway is None:
             submit_fn()
             return True

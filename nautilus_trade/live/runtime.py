@@ -18,6 +18,7 @@ from nautilus_trade.execution.gateway import ExecutionGateway
 from nautilus_trade.live.reconciler import LiveReconciler
 from nautilus_trade.ops.circuit_breaker import CircuitBreaker
 from nautilus_trade.ops.event_store import EventStore
+from nautilus_trade.ops.order_timing import OrderTimingTracker
 from nautilus_trade.risk.engine import PortfolioRiskEngine
 
 log = logging.getLogger(__name__)
@@ -35,6 +36,7 @@ class LiveRuntime:
     gateway: ExecutionGateway
     reconciler: LiveReconciler
     event_store: EventStore
+    order_timing: OrderTimingTracker
 
     def record_breaker_trip(self, reason: str) -> None:
         """Trip the circuit breaker and persist an audit event."""
@@ -69,6 +71,7 @@ def create_live_runtime(run_id: str) -> LiveRuntime:
     )
     gateway = ExecutionGateway(risk_engine=risk_engine, breaker=breaker)
     reconciler = LiveReconciler(breaker=breaker, trip_fn=record_breaker_trip)
+    order_timing = OrderTimingTracker()
     log.info("LiveRuntime created: run_id=%s", run_id)
     return LiveRuntime(
         run_id=run_id,
@@ -77,6 +80,7 @@ def create_live_runtime(run_id: str) -> LiveRuntime:
         gateway=gateway,
         reconciler=reconciler,
         event_store=event_store,
+        order_timing=order_timing,
     )
 
 

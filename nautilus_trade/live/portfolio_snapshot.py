@@ -25,3 +25,13 @@ def extract_internal_positions(cache: Any) -> dict[str, Decimal]:
             continue
         positions[str(position.instrument_id)] = Decimal(str(position.quantity))
     return positions
+
+
+def extract_internal_open_order_client_ids(cache: Any) -> frozenset[str]:
+    """Return client order IDs for all open orders in cache."""
+    ids: set[str] = set()
+    for order in cache.orders_open():
+        client_id = getattr(order, "client_order_id", None)
+        if client_id is not None:
+            ids.add(str(client_id))
+    return frozenset(ids)

@@ -56,6 +56,8 @@ class TestFeedHealthGuard:
         assert len(trips) == 1
 
     def test_stale_episode_resets_on_fresh_bar_and_can_trip_again(self) -> None:
+        from unittest.mock import MagicMock
+
         breaker = CircuitBreaker()
         trips: list[str] = []
 
@@ -71,13 +73,18 @@ class TestFeedHealthGuard:
             breaker=breaker,
             trip_fn=trip_fn,
         )
+        guard.clock = MagicMock()
+        guard.subscribe_bars = MagicMock()
+        guard.on_start()
+
         now_ns = 1_700_000_000_000_000_000
-        guard._last_bar_ts = now_ns - int(60 * 1e9)
+        stale_bar = MagicMock(ts_event=now_ns - int(60 * 1e9))
+        guard.on_bar(stale_bar)
         guard._evaluate(now_ns)
         assert len(trips) == 1
 
-        guard._last_bar_ts = now_ns
-        guard._stale_tripped = False
+        fresh_bar = MagicMock(ts_event=now_ns)
+        guard.on_bar(fresh_bar)
         guard._evaluate(now_ns + int(60 * 1e9))
         assert len(trips) == 2
 

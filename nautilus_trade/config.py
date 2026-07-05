@@ -59,6 +59,15 @@ class OpsConfig(BaseSettings):
     logfire_token: str = Field(default="", alias="LOGFIRE_TOKEN")
 
 
+class ReconciliationConfig(BaseSettings):
+    """Reconciliation actor timing and scope."""
+
+    model_config = SettingsConfigDict(env_prefix="RECON_", env_file=".env", extra="ignore")
+
+    startup_delay_seconds: int = Field(default=15, description="Delay before startup reconciliation")
+    currencies: str = Field(default="USDT", description="Comma-separated balance currencies to compare")
+
+
 class SystemConfig(BaseSettings):
     """Top-level system config."""
 
@@ -67,6 +76,11 @@ class SystemConfig(BaseSettings):
     trade_env: TradeEnv = Field(default=TradeEnv.RESEARCH, alias="TRADE_ENV")
     catalog_path: Path = Field(default=Path("./catalog"), alias="CATALOG_PATH")
     nautilus_log_level: str = Field(default="INFO", alias="NAUTILUS_LOG_LEVEL")
+    block_entries_until_regime: bool = Field(
+        default=False,
+        alias="BLOCK_ENTRIES_UNTIL_REGIME",
+        description="Block strategy entries until first regime signal (live/staging)",
+    )
 
     @property
     def is_live(self) -> bool:
@@ -85,4 +99,5 @@ class SystemConfig(BaseSettings):
 system_cfg = SystemConfig()
 risk_cfg = RiskConfig()
 adapter_cfg = AdapterConfig()
+recon_cfg = ReconciliationConfig()
 ops_cfg = OpsConfig()

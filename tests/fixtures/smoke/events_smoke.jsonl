@@ -1,0 +1,2 @@
+{"ts": "2026-01-01T00:00:10+00:00", "event_type": "reconciliation_startup_timing", "phase": "startup", "elapsed_seconds": 15.2, "configured_delay_seconds": 15}
+{"ts": "2026-01-01T00:00:11+00:00", "event_type": "reconciliation_ok", "phase": "startup", "balances": "PASS", "positions": "PASS", "open_orders": "PASS"}

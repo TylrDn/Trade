@@ -12,6 +12,7 @@ import logging
 
 from nautilus_trade.backtest.node import build_backtest_config, run_backtest
 from nautilus_trade.backtest.report import print_manifest_table
+from nautilus_trade.ops.logging_setup import configure_observability
 
 logging.basicConfig(level="INFO", format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ DEFAULT_END = "2025-01-01"
 
 
 def main() -> None:
+    configure_observability()
     parser = argparse.ArgumentParser(description="Run NautilusTrader backtest")
     parser.add_argument("--tag", default="", help="Optional run label")
     parser.add_argument("--list", action="store_true", help="List previous runs")

@@ -18,10 +18,17 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import sys
 import uuid
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from nautilus_trade.ops.logging_setup import configure_observability
 
 
 def main() -> None:
+    configure_observability()
     parser = argparse.ArgumentParser(description="Emergency flatten all positions")
     parser.add_argument("--env", required=True, choices=["staging", "production"])
     parser.add_argument("--force", action="store_true", help="Skip confirmation prompt")

@@ -3,8 +3,9 @@
 OrderFilled events do not carry realized PnL. The engine updates position
 realized_pnl on each fill; we track deltas for daily loss accounting.
 
-Scope: USDT-settled instruments (e.g. Binance USDT-M perps). Multi-currency
-conversion is not performed here.
+Settlement amounts are converted to USD via ``FxConverter`` (default
+``UsdtPegConverter``: 1:1 peg for USDT/USD stablecoins). Non-pegged
+currencies require ``MidPriceConverter`` or another converter implementation.
 """
 
 from __future__ import annotations
@@ -13,7 +14,11 @@ import logging
 from decimal import Decimal
 from typing import Any
 
+from nautilus_trade.portfolio.fx import FxConverter, UsdtPegConverter
+
 log = logging.getLogger(__name__)
+
+_DEFAULT_FX = UsdtPegConverter()
 
 
 def _money_to_float(value: Any) -> float:
@@ -47,10 +52,25 @@ def resolve_position_for_fill(cache: Any, event: Any) -> Any | None:
     return None
 
 
+def _settlement_currency(position: Any) -> str:
+    for attr in ("settlement_currency", "quote_currency"):
+        value = getattr(position, attr, None)
+        if value is not None:
+            text = str(value)
+            return text.split(".")[-1] if "." in text else text
+    instrument_id = str(getattr(position, "instrument_id", ""))
+    if "USDT" in instrument_id:
+        return "USDT"
+    if "USD" in instrument_id:
+        return "USD"
+    return "USDT"
+
+
 def realized_pnl_delta_usd(
     cache: Any,
     event: Any,
     last_seen: dict[str, Decimal],
+    fx: FxConverter | None = None,
 ) -> tuple[float | None, str]:
     """Return (delta_usd, source) for a fill event.
 
@@ -79,4 +99,14 @@ def realized_pnl_delta_usd(
     previous = last_seen.get(key, Decimal(0))
     delta = current - previous
     last_seen[key] = current
-    return float(delta), "position_delta"
+    converter = fx or _DEFAULT_FX
+    currency = _settlement_currency(position)
+    delta_usd = converter.to_usd(delta, currency)
+    if delta_usd is None:
+        log.warning(
+            "realized_pnl_delta: cannot convert %s to USD for position %s",
+            currency,
+            key,
+        )
+        return None, "unavailable"
+    return float(delta_usd), "position_delta"

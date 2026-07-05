@@ -20,7 +20,13 @@ from nautilus_trade.strategies.ema_cross import EmaCrossConfig, EmaCrossStrategy
 
 def create_ema_cross_strategy(config: EmaCrossConfig) -> EmaCrossStrategy:
     runtime = get_live_runtime()
-    return EmaCrossStrategy(config, gateway=runtime.gateway)
+    strategy = EmaCrossStrategy(config, gateway=runtime.gateway)
+    strategy.bind_execution_gateway(
+        runtime.gateway,
+        event_store=runtime.event_store,
+        order_timing_tracker=runtime.order_timing,
+    )
+    return strategy
 
 
 def create_feed_health_guard(config: FeedHealthGuardConfig) -> FeedHealthGuard:

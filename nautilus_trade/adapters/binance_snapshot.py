@@ -31,6 +31,7 @@ class VenueSnapshot:
     error: str | None = None
     raw_positions: dict[str, Decimal] = field(default_factory=dict)
     balance_details: dict[str, dict[str, str]] = field(default_factory=dict)
+    open_order_client_ids: frozenset[str] = field(default_factory=frozenset)
 
 
 class VenueSnapshotProvider(Protocol):
@@ -87,6 +88,11 @@ class BinanceVenueSnapshotProvider:
             response = httpx.get(url, headers=headers, timeout=10.0)
             response.raise_for_status()
             data = response.json()
+
+            open_orders_url = f"{self._base_url}/fapi/v1/openOrders?{query}&signature={signature}"
+            open_resp = httpx.get(open_orders_url, headers=headers, timeout=10.0)
+            open_resp.raise_for_status()
+            open_orders_data = open_resp.json()
         except Exception as exc:  # noqa: BLE001
             log.error("Binance venue snapshot fetch failed: %s", exc)
             return VenueSnapshot(
@@ -118,10 +124,17 @@ class BinanceVenueSnapshotProvider:
             raw_positions[symbol] = amt
             positions[binance_symbol_to_instrument_id(symbol)] = amt
 
+        open_order_client_ids: set[str] = set()
+        for order in open_orders_data:
+            client_id = str(order.get("clientOrderId", ""))
+            if client_id:
+                open_order_client_ids.add(client_id)
+
         return VenueSnapshot(
             balances=balances,
             positions=positions,
             status="ok",
             raw_positions=raw_positions,
             balance_details=balance_details,
+            open_order_client_ids=frozenset(open_order_client_ids),
         )

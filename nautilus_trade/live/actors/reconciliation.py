@@ -14,9 +14,10 @@ from nautilus_trade.adapters.binance_instruments import (
     mapping_warnings_for_positions,
 )
 from nautilus_trade.adapters.binance_snapshot import VenueSnapshot, VenueSnapshotProvider
-from nautilus_trade.config import system_cfg
+from nautilus_trade.config import recon_cfg, system_cfg
 from nautilus_trade.live.portfolio_snapshot import (
     extract_internal_balances,
+    extract_internal_open_order_client_ids,
     extract_internal_positions,
 )
 
@@ -123,14 +124,23 @@ class ReconciliationActor(Actor):
 
         internal_balances = extract_internal_balances(self.portfolio)
         internal_positions = extract_internal_positions(self.cache)
+        internal_open_orders = extract_internal_open_order_client_ids(self.cache)
+        recon_currencies = frozenset(
+            c.strip().upper() for c in recon_cfg.currencies.split(",") if c.strip()
+        )
 
         balance_result = self._runtime.reconciler.check_balances(
             internal_balances,
             snapshot.balances,
+            currencies=recon_currencies,
         )
         position_result = self._runtime.reconciler.check_positions(
             internal_positions,
             venue_positions,
+        )
+        open_orders_result = self._runtime.reconciler.check_open_orders(
+            internal_open_orders,
+            snapshot.open_order_client_ids,
         )
 
         if not balance_result.passed or not position_result.passed:
@@ -143,11 +153,36 @@ class ReconciliationActor(Actor):
                 payload["usdt_balance_details"] = snapshot.balance_details["USDT"]
             self._runtime.event_store.record("reconciliation_failed", payload)
 
+        if not open_orders_result.passed:
+            self._runtime.event_store.record(
+                "reconciliation_open_orders_mismatch",
+                {"phase": phase, "mismatches": open_orders_result.mismatches},
+            )
+            if not system_cfg.is_research:
+                self._runtime.record_breaker_trip("reconciliation_open_orders_mismatch")
+
+        all_passed = (
+            balance_result.passed
+            and position_result.passed
+            and open_orders_result.passed
+        )
+        if all_passed:
+            self._runtime.event_store.record(
+                "reconciliation_ok",
+                {
+                    "phase": phase,
+                    "balances": "PASS",
+                    "positions": "PASS",
+                    "open_orders": "PASS",
+                },
+            )
+
         log.info(
-            "Reconciliation %s complete: balances=%s positions=%s",
+            "Reconciliation %s complete: balances=%s positions=%s open_orders=%s",
             phase,
             "PASS" if balance_result.passed else "FAIL",
             "PASS" if position_result.passed else "FAIL",
+            "PASS" if open_orders_result.passed else "FAIL",
         )
 
     def _handle_snapshot_failure(self, phase: str, snapshot: VenueSnapshot) -> None:
