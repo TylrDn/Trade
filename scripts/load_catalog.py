@@ -39,22 +39,29 @@ def main() -> None:
         epilog=EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--symbol", default="BTCUSDT", help="Binance symbol")
+    parser.add_argument("--venue", choices=["binance", "kraken"], default="binance")
+    parser.add_argument("--symbol", default=None, help="Venue symbol (default: BTCUSDT or PF_XBTUSD)")
     parser.add_argument("--interval", default="1m", help="Kline interval")
     parser.add_argument("--start", required=True, help="ISO start datetime (UTC)")
     parser.add_argument("--end", required=True, help="ISO end datetime (UTC)")
     parser.add_argument("--catalog-path", default="./catalog", help="Catalog path")
     args = parser.parse_args()
 
+    if args.venue == "kraken":
+        raise SystemExit(
+            "Kraken catalog loader (Phase 9) is not implemented yet. Use --venue binance."
+        )
+
     start = _parse_dt(args.start)
     end = _parse_dt(args.end)
+    symbol = args.symbol or "BTCUSDT"
     count = load_klines_to_catalog(
-        symbol=args.symbol,
+        symbol=symbol,
         interval=args.interval,
         start=start,
         end=end,
     )
-    log.info("Loaded %s bars for %s", count, args.symbol)
+    log.info("Loaded %s bars for %s", count, symbol)
 
 
 if __name__ == "__main__":

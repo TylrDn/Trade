@@ -37,6 +37,10 @@ dev = [
     "mypy>=1.10",
     "pre-commit>=3.7",
     "logfire>=2.0",
+    "respx>=0.21",
+]
+kraken = [
+    "nautilus_trader[kraken]>=1.206.0",
 ]
 
 [tool.ruff]

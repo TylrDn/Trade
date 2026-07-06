@@ -8,7 +8,7 @@ import pytest
 
 pytest.importorskip("prometheus_client")
 
-from nautilus_trade.adapters.binance_snapshot import VenueSnapshot
+from nautilus_trade.adapters.snapshot_types import VenueSnapshot
 from nautilus_trade.live.actors.reconciliation import ReconciliationActorConfig
 from nautilus_trade.live.runtime import create_live_runtime
 
@@ -38,6 +38,7 @@ class TestReconciliationActor:
                 ReconciliationActorConfig(
                     bar_type="BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
                     venue="BINANCE",
+                    currencies=("USDT",),
                 ),
                 runtime=runtime,
                 venue_provider=MockVenueProvider(
@@ -75,6 +76,7 @@ class TestReconciliationActor:
                 ReconciliationActorConfig(
                     bar_type="BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
                     venue="BINANCE",
+                    currencies=("USDT",),
                 ),
                 runtime=runtime,
                 venue_provider=MockVenueProvider(
@@ -106,6 +108,7 @@ class TestReconciliationActor:
                 ReconciliationActorConfig(
                     bar_type="BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
                     venue="BINANCE",
+                    currencies=("USDT",),
                 ),
                 runtime=runtime,
                 venue_provider=MockVenueProvider(
@@ -148,6 +151,7 @@ class TestReconciliationActor:
                 ReconciliationActorConfig(
                     bar_type="BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
                     venue="BINANCE",
+                    currencies=("USDT",),
                 ),
                 runtime=runtime,
                 venue_provider=MockVenueProvider(
@@ -166,6 +170,64 @@ class TestReconciliationActor:
             assert runtime.breaker.is_tripped
             contents = (tmp_path / "events_recon-mapping.jsonl").read_text()
             assert "reconciliation_mapping_warning" in contents
+        finally:
+            runtime.close()
+
+    def test_raises_when_currencies_unset(self, tmp_path, monkeypatch) -> None:
+        pytest.importorskip("nautilus_trader")
+        from nautilus_trade.live.actors.reconciliation import ReconciliationActor
+
+        monkeypatch.setattr("nautilus_trade.ops.event_store.EVENT_LOG_DIR", tmp_path)
+        runtime = create_live_runtime("recon-no-currencies")
+        try:
+            actor = ReconciliationActor(
+                ReconciliationActorConfig(
+                    bar_type="PF_XBTUSD.KRAKEN-1-MINUTE-LAST-INTERNAL",
+                    venue="KRAKEN",
+                    currencies=None,
+                ),
+                runtime=runtime,
+                venue_provider=MockVenueProvider(
+                    VenueSnapshot(balances={}, positions={}, status="ok"),
+                ),
+            )
+            with pytest.raises(RuntimeError, match="currencies not configured"):
+                actor.on_start()
+        finally:
+            runtime.close()
+
+    def test_kraken_venue_passes_with_usd(self, tmp_path, monkeypatch) -> None:
+        pytest.importorskip("nautilus_trader")
+        from nautilus_trade.live.actors.reconciliation import ReconciliationActor
+
+        monkeypatch.setattr("nautilus_trade.ops.event_store.EVENT_LOG_DIR", tmp_path)
+        runtime = create_live_runtime("recon-kraken")
+        try:
+            balance = type("Balance", (), {"total": Decimal("5000")})()
+            account = type("Account", (), {"balances": lambda self: {"USD": balance}})()
+            portfolio = type("Portfolio", (), {"accounts": lambda self: [account]})()
+            cache = type("Cache", (), {"positions_open": lambda self: []})()
+
+            actor = ReconciliationActor(
+                ReconciliationActorConfig(
+                    bar_type="PF_XBTUSD.KRAKEN-1-MINUTE-LAST-INTERNAL",
+                    venue="KRAKEN",
+                    currencies=("USD",),
+                ),
+                runtime=runtime,
+                venue_provider=MockVenueProvider(
+                    VenueSnapshot(
+                        balances={"USD": Decimal("5000")},
+                        positions={},
+                        status="ok",
+                    ),
+                ),
+            )
+            actor.portfolio = portfolio  # type: ignore[attr-defined]
+            actor.cache = cache  # type: ignore[attr-defined]
+            actor.run_reconciliation("test")
+
+            assert not runtime.breaker.is_tripped
         finally:
             runtime.close()
 
@@ -195,6 +257,7 @@ class TestReconciliationActor:
                     bar_type="BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
                     venue="BINANCE",
                     startup_delay_seconds=15,
+                    currencies=("USDT",),
                 ),
                 runtime=runtime,
                 venue_provider=MockVenueProvider(

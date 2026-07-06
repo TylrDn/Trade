@@ -35,6 +35,7 @@ def build_live_trading_node(
     exec_factory: Any,
     data_client_config: Any,
     exec_client_config: Any,
+    recon_currencies: frozenset[str] | None = None,
 ) -> TradingNode:
     """Build a TradingNode with the shared live runtime safety envelope."""
     if not strategy_specs:
@@ -50,6 +51,13 @@ def build_live_trading_node(
         venue,
         runtime.run_id,
     )
+
+    if not recon_currencies:
+        raise ValueError(
+            "recon_currencies is required — pass VenueBundle.recon_currencies "
+            "from resolve_venue_bundle()"
+        )
+    currencies_tuple = tuple(sorted(recon_currencies))
 
     strategies = [
         ImportableStrategyConfig(
@@ -79,7 +87,12 @@ def build_live_trading_node(
         ImportableActorConfig(
             actor_path="nautilus_trade.live.factories:create_reconciliation_actor",
             config_path="nautilus_trade.live.actors.reconciliation:ReconciliationActorConfig",
-            config={"bar_type": bar_type, "venue": venue, "startup_delay_seconds": recon_cfg.startup_delay_seconds},
+            config={
+                "bar_type": bar_type,
+                "venue": venue,
+                "startup_delay_seconds": recon_cfg.startup_delay_seconds,
+                "currencies": currencies_tuple,
+            },
         ),
     ]
 
@@ -120,6 +133,7 @@ def build_live_node(
     data_client_config: Any,
     exec_client_config: Any,
     runtime: LiveRuntime | None = None,
+    recon_currencies: frozenset[str] | None = None,
 ) -> TradingNode:
     """Backward-compatible wrapper requiring an explicit LiveRuntime."""
     if runtime is None:
@@ -135,6 +149,7 @@ def build_live_node(
         exec_factory=exec_factory,
         data_client_config=data_client_config,
         exec_client_config=exec_client_config,
+        recon_currencies=recon_currencies,
     )
 
 

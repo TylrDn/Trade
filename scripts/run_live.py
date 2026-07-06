@@ -13,12 +13,7 @@ from __future__ import annotations
 import logging
 import uuid
 
-from nautilus_trade.adapters.binance_config import (
-    DATA_FACTORY,
-    EXEC_FACTORY,
-    binance_data_config,
-    binance_exec_config,
-)
+from nautilus_trade.adapters.venue_registry import resolve_venue_bundle
 from nautilus_trade.config import system_cfg
 from nautilus_trade.live.node import build_live_trading_node
 from nautilus_trade.live.runtime import create_live_runtime, unbind_live_runtime
@@ -28,18 +23,11 @@ from nautilus_trade.ops.metrics import start_metrics_server
 logging.basicConfig(level="INFO", format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger(__name__)
 
-DEFAULT_STRATEGY_CONFIG = {
-    "instrument_id": "BTCUSDT-PERP.BINANCE",
-    "bar_type": "BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
-    "fast_period": 10,
-    "slow_period": 30,
-    "trade_size": "0.01",
-}
-
 
 def main() -> None:
     configure_observability()
-    log.info("Starting live node: env=%s", system_cfg.trade_env.value)
+    bundle = resolve_venue_bundle()
+    log.info("Starting live node: env=%s venue=%s", system_cfg.trade_env.value, bundle.venue)
 
     if system_cfg.is_live:
         log.warning(
@@ -51,12 +39,13 @@ def main() -> None:
 
     node = build_live_trading_node(
         runtime=runtime,
-        venue="BINANCE",
-        strategy_specs=[{"config": DEFAULT_STRATEGY_CONFIG}],
-        data_factory=DATA_FACTORY,
-        exec_factory=EXEC_FACTORY,
-        data_client_config=binance_data_config(),
-        exec_client_config=binance_exec_config(),
+        venue=bundle.venue,
+        strategy_specs=[{"config": bundle.strategy_config()}],
+        data_factory=bundle.data_factory,
+        exec_factory=bundle.exec_factory,
+        data_client_config=bundle.data_config,
+        exec_client_config=bundle.exec_config,
+        recon_currencies=bundle.recon_currencies,
     )
 
     try:

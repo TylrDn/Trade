@@ -55,6 +55,7 @@ class TestBuildLiveTradingNode:
                 exec_factory=object(),
                 data_client_config=SimpleNamespace(),
                 exec_client_config=SimpleNamespace(),
+                recon_currencies=frozenset({"USDT"}),
             )
 
             assert build_calls == [True]

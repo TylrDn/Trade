@@ -75,11 +75,11 @@ infra/                 # Prometheus, Grafana, Docker configs
 
 ```bash
 # 1. Install dependencies
-pip install -e ".[dev]"
+pip install -e ".[dev,kraken]"
 
-# 2. Copy env template
+# 2. Copy env template (default TRADE_VENUE=kraken)
 cp .env.example .env
-# Fill in your API keys, secrets, etc.
+# Fill in KRAKEN_FUTURES_DEMO_* or BINANCE_* keys
 
 # 3. Run backtest (requires populated catalog — see scripts/run_backtest.py)
 python3 scripts/run_backtest.py
@@ -157,9 +157,7 @@ In minimal environments without `nautilus_trader` / `prometheus_client`, heavy-d
 
 ## Planned / not yet implemented
 
-- Kraken venue adapter and reconciliation
-- Nautilus exec-engine order-level reconciliation (v2)
-- Automatic catalog resume cursor (loader v1 writes per-chunk staging only)
+- Automatic catalog resume cursor (loader v1 writes per-chunk staging only; Kraken history Phase 9)
 - Full multi-currency FX desk (v1 converter protocol + USDT default only)
 
 ---

@@ -1,28 +1,24 @@
-"""Binance symbol to Nautilus InstrumentId mapping for reconciliation."""
+"""Kraken symbol to Nautilus InstrumentId mapping for reconciliation."""
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 
-def binance_symbol_to_instrument_id(symbol: str) -> str:
-    """Map a Binance USDT-M futures symbol to Nautilus InstrumentId string.
+def kraken_symbol_to_instrument_id(symbol: str) -> str:
+    """Map a Kraken Futures symbol to Nautilus InstrumentId string.
 
-    Example: BTCUSDT -> BTCUSDT-PERP.BINANCE
+    Example: PF_XBTUSD -> PF_XBTUSD.KRAKEN
     """
-    return f"{symbol}-PERP.BINANCE"
+    return f"{symbol}.KRAKEN"
 
 
-def map_binance_positions(
+def map_kraken_positions(
     raw_positions: dict[str, Any],
     cache: Any | None = None,
-) -> dict[str, Any]:
-    """Map Binance symbol keys to Nautilus instrument_id strings.
-
-    When *cache* is provided, attempts to match instruments by symbol first.
-    """
-    from decimal import Decimal
-
+) -> dict[str, Decimal]:
+    """Map Kraken symbol keys to Nautilus instrument_id strings."""
     mapped: dict[str, Decimal] = {}
     for symbol, qty in raw_positions.items():
         amt = Decimal(str(qty))
@@ -42,4 +38,4 @@ def _resolve_instrument_id(symbol: str, cache: Any | None) -> str:
                 raw_symbol = str(getattr(instrument, "raw_symbol", inst_symbol))
                 if symbol in (inst_symbol, raw_symbol):
                     return str(instrument.id)
-    return binance_symbol_to_instrument_id(symbol)
+    return kraken_symbol_to_instrument_id(symbol)

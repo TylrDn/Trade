@@ -14,10 +14,11 @@ See [`runs/testnet_smoke/README.md`](../runs/testnet_smoke/README.md) for naming
 
 ## Prerequisites
 
-- Binance testnet API keys in `.env`
-- `BINANCE_TESTNET=true`
+- Kraken Futures **demo** API keys in `.env` (default `TRADE_VENUE=kraken`) or Binance testnet keys (`TRADE_VENUE=binance`)
+- Kraken: `KRAKEN_DEMO=true`, `KRAKEN_FUTURES_DEMO_API_KEY/SECRET`, `RISK_FEED_STARTUP_GRACE_SECONDS=180`
+- Binance: `BINANCE_TESTNET=true`, `BINANCE_API_KEY/SECRET`
 - `TRADE_ENV=staging`
-- Dependencies installed: `pip install -e ".[dev]"`
+- Dependencies installed: `pip install -e ".[dev,kraken]"`
 
 ## 1. Start the live node
 
@@ -149,5 +150,5 @@ Gates reference (from promote script):
 ## Explicitly out of scope
 
 - Fully automated promotion without operator attestation
-- Kraken venue reconciliation (Binance USDT-M only today)
+- Full multi-currency FX desk (v1 converter protocol + venue defaults)
 - Automatic 7-day soak (operator-tracked via `soak_status.py`)

@@ -44,8 +44,13 @@ class AdapterConfig(BaseSettings):
     binance_api_secret: str = Field(default="", alias="BINANCE_API_SECRET")
     binance_testnet: bool = Field(default=True, alias="BINANCE_TESTNET")
 
-    kraken_api_key: str = Field(default="", alias="KRAKEN_API_KEY")
-    kraken_api_secret: str = Field(default="", alias="KRAKEN_API_SECRET")
+    kraken_demo: bool = Field(default=True, alias="KRAKEN_DEMO")
+    kraken_futures_demo_api_key: str = Field(default="", alias="KRAKEN_FUTURES_DEMO_API_KEY")
+    kraken_futures_demo_api_secret: str = Field(
+        default="", alias="KRAKEN_FUTURES_DEMO_API_SECRET"
+    )
+    kraken_futures_api_key: str = Field(default="", alias="KRAKEN_FUTURES_API_KEY")
+    kraken_futures_api_secret: str = Field(default="", alias="KRAKEN_FUTURES_API_SECRET")
 
 
 class OpsConfig(BaseSettings):
@@ -65,7 +70,10 @@ class ReconciliationConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="RECON_", env_file=".env", extra="ignore")
 
     startup_delay_seconds: int = Field(default=15, description="Delay before startup reconciliation")
-    currencies: str = Field(default="USDT", description="Comma-separated balance currencies to compare")
+    currencies: str = Field(
+        default="",
+        description="Comma-separated balance currencies; empty = venue bundle default",
+    )
 
 
 class SystemConfig(BaseSettings):
@@ -81,6 +89,9 @@ class SystemConfig(BaseSettings):
         alias="BLOCK_ENTRIES_UNTIL_REGIME",
         description="Block strategy entries until first regime signal (live/staging)",
     )
+    trade_venue: str = Field(default="kraken", alias="TRADE_VENUE")
+    trade_instrument: str = Field(default="", alias="TRADE_INSTRUMENT")
+    trade_bar_type: str = Field(default="", alias="TRADE_BAR_TYPE")
 
     @property
     def is_live(self) -> bool:

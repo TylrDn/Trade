@@ -9,12 +9,12 @@ from typing import TYPE_CHECKING
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.trading.actor import Actor
 
-from nautilus_trade.adapters.binance_instruments import (
-    map_binance_positions,
+from nautilus_trade.adapters.instrument_mapping import (
+    map_venue_positions,
     mapping_warnings_for_positions,
 )
-from nautilus_trade.adapters.binance_snapshot import VenueSnapshot, VenueSnapshotProvider
-from nautilus_trade.config import recon_cfg, system_cfg
+from nautilus_trade.adapters.snapshot_types import VenueSnapshot, VenueSnapshotProvider
+from nautilus_trade.config import system_cfg
 from nautilus_trade.live.portfolio_snapshot import (
     extract_internal_balances,
     extract_internal_open_order_client_ids,
@@ -35,6 +35,7 @@ class ReconciliationActorConfig(ActorConfig, frozen=True):
     venue: str = "BINANCE"
     interval_seconds: int = 60
     startup_delay_seconds: int = 15
+    currencies: tuple[str, ...] | None = None
 
 
 class ReconciliationActor(Actor):
@@ -54,6 +55,12 @@ class ReconciliationActor(Actor):
         self._startup_timing_recorded = False
 
     def on_start(self) -> None:
+        if not self.cfg.currencies:
+            raise RuntimeError(
+                "ReconciliationActor currencies not configured — "
+                "wire via resolve_venue_bundle() and build_live_trading_node(); "
+                "do not instantiate with bare ReconciliationActorConfig()."
+            )
         self._started_at_ns = self.clock.timestamp_ns()
         self.clock.set_timer(
             name=_STARTUP_TIMER,
@@ -81,7 +88,7 @@ class ReconciliationActor(Actor):
 
     def _resolve_venue_positions(self, snapshot: VenueSnapshot) -> dict[str, Decimal]:
         if snapshot.raw_positions:
-            return map_binance_positions(snapshot.raw_positions, self.cache)
+            return map_venue_positions(self.cfg.venue, snapshot.raw_positions, self.cache)
         return snapshot.positions
 
     def _run_reconciliation(self, phase: str) -> None:
@@ -125,9 +132,7 @@ class ReconciliationActor(Actor):
         internal_balances = extract_internal_balances(self.portfolio)
         internal_positions = extract_internal_positions(self.cache)
         internal_open_orders = extract_internal_open_order_client_ids(self.cache)
-        recon_currencies = frozenset(
-            c.strip().upper() for c in recon_cfg.currencies.split(",") if c.strip()
-        )
+        recon_currencies = frozenset(self.cfg.currencies)
 
         balance_result = self._runtime.reconciler.check_balances(
             internal_balances,
@@ -149,8 +154,13 @@ class ReconciliationActor(Actor):
                 "balance_mismatches": balance_result.mismatches,
                 "position_mismatches": position_result.mismatches,
             }
-            if balance_result.mismatches and "USDT" in snapshot.balance_details:
-                payload["usdt_balance_details"] = snapshot.balance_details["USDT"]
+            if balance_result.mismatches and snapshot.balance_details:
+                for currency in recon_currencies:
+                    if currency in snapshot.balance_details:
+                        payload[f"{currency.lower()}_balance_details"] = snapshot.balance_details[
+                            currency
+                        ]
+                        break
             self._runtime.event_store.record("reconciliation_failed", payload)
 
         if not open_orders_result.passed:
@@ -190,8 +200,9 @@ class ReconciliationActor(Actor):
             event_type = "reconciliation_missing_credentials"
             trip_reason = "reconciliation_missing_credentials"
             log.critical(
-                "Reconciliation aborted (%s): missing Binance credentials",
+                "Reconciliation aborted (%s): missing credentials for venue=%s",
                 phase,
+                self.cfg.venue,
             )
         else:
             event_type = "reconciliation_fetch_failed"

@@ -9,8 +9,11 @@
 | Date (UTC) | YYYY-MM-DD |
 | Operator | |
 | run_id | |
+| venue | kraken / binance |
 | TRADE_ENV | staging |
-| BINANCE_TESTNET | true |
+| KRAKEN_DEMO | true (Kraken) |
+| BINANCE_TESTNET | true (Binance) |
+| Instrument | PF_XBTUSD.KRAKEN or BTCUSDT-PERP.BINANCE |
 | Credential status | ok / missing / invalid |
 
 ## 1. Live node startup

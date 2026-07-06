@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 from typing import Any, Protocol
+
+log = logging.getLogger(__name__)
 
 
 class FxConverter(Protocol):
@@ -38,4 +41,8 @@ class CacheMidConverter:
         pegged = self._fallback.to_usd(amount, currency)
         if pegged is not None:
             return pegged
+        log.debug(
+            "CacheMidConverter: no USD rate for %s (v1 peg-only; mid lookup is v2)",
+            currency,
+        )
         return None

@@ -24,7 +24,10 @@ jobs:
           pip install pytest httpx pydantic pydantic-settings python-dotenv
 
       - name: Run lightweight tests
-        run: pytest tests/test_reconciler.py tests/test_binance_instruments.py -v
+        run: |
+          pytest tests/test_reconciler.py tests/test_binance_instruments.py \
+            tests/test_kraken_auth.py tests/test_kraken_instruments.py \
+            tests/test_kraken_snapshot.py tests/test_venue_registry.py -v
 
   lint-and-test:
     runs-on: ubuntu-latest
@@ -52,7 +55,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[dev,kraken]"
 
       - name: Lint (ruff)
         run: ruff check nautilus_trade tests scripts
@@ -81,7 +84,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[dev,kraken]"
 
       - name: Run staging fail-closed safety tests
         run: |

@@ -44,12 +44,7 @@ def main() -> None:
 
     os.environ["TRADE_ENV"] = args.env
 
-    from nautilus_trade.adapters.binance_config import (
-        DATA_FACTORY,
-        EXEC_FACTORY,
-        binance_data_config,
-        binance_exec_config,
-    )
+    from nautilus_trade.adapters.venue_registry import resolve_venue_bundle
     from nautilus_trade.live.node import build_flatten_trading_node
     from nautilus_trade.live.runtime import create_live_runtime, unbind_live_runtime
 
@@ -60,14 +55,15 @@ def main() -> None:
     log = logging.getLogger(__name__)
     log.critical("FLATTEN ALL initiated: env=%s", args.env)
 
+    bundle = resolve_venue_bundle()
     runtime = create_live_runtime(run_id=f"flatten-{uuid.uuid4().hex[:8]}")
     node = build_flatten_trading_node(
         runtime=runtime,
-        venue="BINANCE",
-        data_factory=DATA_FACTORY,
-        exec_factory=EXEC_FACTORY,
-        data_client_config=binance_data_config(),
-        exec_client_config=binance_exec_config(),
+        venue=bundle.venue,
+        data_factory=bundle.data_factory,
+        exec_factory=bundle.exec_factory,
+        data_client_config=bundle.data_config,
+        exec_client_config=bundle.exec_config,
     )
 
     try:

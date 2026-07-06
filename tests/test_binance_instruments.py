@@ -8,8 +8,8 @@ from types import SimpleNamespace
 from nautilus_trade.adapters.binance_instruments import (
     binance_symbol_to_instrument_id,
     map_binance_positions,
-    mapping_warnings_for_positions,
 )
+from nautilus_trade.adapters.instrument_mapping import mapping_warnings_for_positions
 
 
 def test_binance_symbol_to_instrument_id() -> None:

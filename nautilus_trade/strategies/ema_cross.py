@@ -90,6 +90,8 @@ class EmaCrossStrategy(BaseStrategy):
         self.register_indicator_for_bars(self.bar_type, self.fast_ema)
         self.register_indicator_for_bars(self.bar_type, self.slow_ema)
         self.subscribe_bars(self.bar_type)
+        if "INTERNAL" in str(self.bar_type):
+            self.subscribe_trade_ticks(self.instrument_id)
         if self.cfg.use_regime_filter:
             self.subscribe_data(RegimeSignal)
 
